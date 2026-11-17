@@ -55,6 +55,9 @@ import {
 } from '../types';
 import { makeSafeId } from '../utils/validation';
 
+// Toggle to true whenever the Sign-In lock screen should be re-enabled
+export const AUTH_LOCK_ENABLED = false;
+
 interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'info';
@@ -479,6 +482,10 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       payload: T,
       auditMeta?: { action: string; module: string; details: string }
     ) => {
+      if (!firebaseUser) {
+        notify('Click Sign In in the top bar to save records to Firebase.', 'info');
+        return;
+      }
       const clean = stripUndefined(payload);
       const path = `${collectionName}/${id}`;
       try {
@@ -494,7 +501,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.CREATE, path);
       }
     },
-    [logAudit]
+    [firebaseUser, logAudit, notify]
   );
 
   const updateRecord = useCallback(
@@ -504,6 +511,10 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       payload: Record<string, unknown>,
       auditMeta?: { action: string; module: string; details: string }
     ) => {
+      if (!firebaseUser) {
+        notify('Click Sign In in the top bar to save updates to Firebase.', 'info');
+        return;
+      }
       const clean = stripUndefined(payload);
       const path = `${collectionName}/${id}`;
       try {
@@ -518,7 +529,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.UPDATE, path);
       }
     },
-    [logAudit]
+    [firebaseUser, logAudit, notify]
   );
 
   const deleteRecord = useCallback(
@@ -527,6 +538,10 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       id: string,
       auditMeta?: { action: string; module: string; details: string }
     ) => {
+      if (!firebaseUser) {
+        notify('Click Sign In in the top bar to manage records in Firebase.', 'info');
+        return;
+      }
       const path = `${collectionName}/${id}`;
       try {
         await deleteDoc(doc(db, collectionName, id));
@@ -537,12 +552,15 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.DELETE, path);
       }
     },
-    [logAudit]
+    [firebaseUser, logAudit, notify]
   );
 
   const approveAdmissionFinal = useCallback(
     async (admission: Admission, selectedClass: AcademicClass, rollNo: string) => {
-      if (!firebaseUser || !isSuperAdmin) {
+      if (!firebaseUser) {
+        throw new Error('Click Sign In in the top bar to approve admissions in Firebase.');
+      }
+      if (!isSuperAdmin) {
         throw new Error('Only Super Admin can grant final admission approval.');
       }
       const batch = writeBatch(db);
@@ -600,6 +618,9 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
   );
 
   const uploadPhoto = useCallback(async (file: File, folder: string): Promise<string> => {
+    if (!firebaseUser) {
+      throw new Error('Click Sign In in the top bar to upload photos to Firebase.');
+    }
     if (!file.type.startsWith('image/')) {
       throw new Error('Only image files are permitted for profile photos.');
     }
@@ -610,7 +631,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
     const storageRef = ref(storage, `markazi_cmo/${folder}/${Date.now()}_${cleanName}`);
     await uploadBytes(storageRef, file);
     return getDownloadURL(storageRef);
-  }, []);
+  }, [firebaseUser]);
 
   return (
     <CMOContext.Provider

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Clock, Database, LockOpen, ShieldCheck } from 'lucide-react';
-import { useCMO } from '../../context/CMOContext';
+import { AUTH_LOCK_ENABLED, useCMO } from '../../context/CMOContext';
 import { formatCounter, ModuleKey } from '../../types';
 import { makeSafeId, sanitizeStr } from '../../utils/validation';
 import { CounterStat, EmptyState, SectionHeader, StatusTag } from '../SharedUI';
@@ -66,7 +66,7 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
   const [closingTime, setClosingTime] = useState('17:00');
   const [graceMinutes, setGraceMinutes] = useState('15');
 
-  if (!isSuperAdmin) {
+  if ((AUTH_LOCK_ENABLED || firebaseUser) && !isSuperAdmin) {
     return (
       <EmptyState
         title="Super Admin Final Authority Required"

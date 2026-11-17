@@ -21,7 +21,7 @@ import {
   UserCheck,
   Users,
 } from 'lucide-react';
-import { useCMO } from '../../context/CMOContext';
+import { AUTH_LOCK_ENABLED, useCMO } from '../../context/CMOContext';
 import { CMO_MODULES, formatCounter, ModuleKey } from '../../types';
 import { CounterStat, SectionHeader } from '../SharedUI';
 
@@ -47,6 +47,7 @@ const MODULE_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
 
 export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => void }) {
   const {
+    firebaseUser,
     userProfile,
     isSuperAdmin,
     isHR,
@@ -120,14 +121,23 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
   ).length;
   const pendingLeaves = leaveRequests.filter((l) => l.status === 'pending').length;
 
+  const isGuestOpen = !firebaseUser && !AUTH_LOCK_ENABLED;
+  const showTeacherQuick = isGuestOpen || isTeacher || isPrincipal || isHR;
+  const showHRQuick = isGuestOpen || isHR;
+  const showAdminQuick = isGuestOpen || isSuperAdmin;
+
   return (
     <div className="space-y-6">
       <SectionHeader
         title="Markazi CMO Institutional Directory"
-        subtitle={`Centralized Multi-Branch Operations · Signed in as ${userProfile?.displayName || 'Staff'} (${(userProfile?.role || 'staff').replace(/_/g, ' ')})`}
+        subtitle={
+          firebaseUser
+            ? `Centralized Multi-Branch Operations · Signed in as ${userProfile?.displayName || 'Staff'} (${(userProfile?.role || 'staff').replace(/_/g, ' ')})`
+            : 'Centralized Multi-Branch Operations · Open Directory View'
+        }
         action={
           <div className="flex flex-wrap items-center gap-2">
-            {(isTeacher || isPrincipal || isHR) && (
+            {showTeacherQuick && (
               <button
                 onClick={() => onNavigate('teacher_management')}
                 className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors whitespace-nowrap shrink-0"
@@ -135,7 +145,7 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
                 Teacher Management
               </button>
             )}
-            {isHR && (
+            {showHRQuick && (
               <button
                 onClick={() => onNavigate('hr_control_panel')}
                 className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors whitespace-nowrap shrink-0"
@@ -143,7 +153,7 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
                 HR Control Panel
               </button>
             )}
-            {isSuperAdmin && (
+            {showAdminQuick && (
               <button
                 onClick={() => onNavigate('super_admin_panel')}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg transition-colors whitespace-nowrap shrink-0"

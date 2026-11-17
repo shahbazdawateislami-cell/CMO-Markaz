@@ -23,7 +23,7 @@ import { OnlineAdmissionModule } from './components/modules/OnlineAdmissionModul
 import { OperationalDepartmentModule } from './components/modules/OperationalDepartmentModule';
 import { SuperAdminModule } from './components/modules/SuperAdminModule';
 import { TeacherManagementModule } from './components/modules/TeacherManagementModule';
-import { CMOProvider, useCMO } from './context/CMOContext';
+import { AUTH_LOCK_ENABLED, CMOProvider, useCMO } from './context/CMOContext';
 import { CMO_MODULES, ModuleKey } from './types';
 
 function ToastStack() {
@@ -69,65 +69,71 @@ function CMOWorkspace() {
   const [activeModule, setActiveModule] = useState<ModuleKey>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  if (!authReady) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="text-sm text-slate-500">Connecting to Markazi CMO Firebase workspace...</div>
-      </div>
-    );
-  }
+  if (AUTH_LOCK_ENABLED) {
+    if (!authReady) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="text-sm text-slate-500">Connecting to Markazi CMO Firebase workspace...</div>
+        </div>
+      );
+    }
 
-  if (!firebaseUser) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl p-8 space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Markazi CMO</h1>
-            <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-              Centralized multi-branch institutional management system for ESS, ERP, HR &amp; Payroll, E-Raseed, Online Admissions, and Departments.
-            </p>
-          </div>
-          <div className="border-t border-slate-100 pt-5 space-y-3">
-            <button
-              onClick={signInWithGoogle}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg transition-colors"
-            >
-              <LogIn className="w-4 h-4" />
-              Sign In with Google
-            </button>
-            <p className="text-xs text-slate-500 text-center">
-              Role-based access enforced for Super Admin, HR, Principals, Teachers, and Department Staff. No Student or Parent portal is provided.
-            </p>
+    if (!firebaseUser) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl p-8 space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">Markazi CMO</h1>
+              <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
+                Centralized multi-branch institutional management system for ESS, ERP, HR &amp; Payroll, E-Raseed, Online Admissions, and Departments.
+              </p>
+            </div>
+            <div className="border-t border-slate-100 pt-5 space-y-3">
+              <button
+                onClick={signInWithGoogle}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In with Google
+              </button>
+              <p className="text-xs text-slate-500 text-center">
+                Role-based access enforced for Super Admin, HR, Principals, Teachers, and Department Staff. No Student or Parent portal is provided.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (!isActiveStaff) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-lg w-full bg-white border border-slate-200 rounded-xl p-8 space-y-4">
-          <div className="flex items-center gap-2 text-amber-800">
-            <ShieldCheck className="w-5 h-5" />
-            <h2 className="text-lg font-semibold text-slate-900">Account Awaiting Institutional Activation</h2>
-          </div>
-          <p className="text-sm text-slate-600 leading-relaxed">
-            Your Google account (<span className="font-mono">{firebaseUser.email}</span>) is registered with status <strong className="uppercase">{userProfile?.status || 'pending'}</strong>. Contact Super Admin or HR Control Panel to assign your institutional role, branch, and department permissions.
-          </p>
-          <div className="pt-2">
-            <button
-              onClick={signOut}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Sign Out
-            </button>
+    if (!isActiveStaff) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="max-w-lg w-full bg-white border border-slate-200 rounded-xl p-8 space-y-4">
+            <div className="flex items-center gap-2 text-amber-800">
+              <ShieldCheck className="w-5 h-5" />
+              <h2 className="text-lg font-semibold text-slate-900">Account Awaiting Institutional Activation</h2>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              Your Google account (<span className="font-mono">{firebaseUser.email}</span>) is registered with status <strong className="uppercase">{userProfile?.status || 'pending'}</strong>. Contact Super Admin or HR Control Panel to assign your institutional role, branch, and department permissions.
+            </p>
+            <div className="pt-2">
+              <button
+                onClick={signOut}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
+
+  const showTeacherNav = !firebaseUser ? true : isTeacher || isPrincipal || isHR;
+  const showHRNav = !firebaseUser ? true : isHR;
+  const showAdminNav = !firebaseUser ? true : isSuperAdmin;
 
   const navigate = (mod: ModuleKey) => {
     setActiveModule(mod);
@@ -220,7 +226,7 @@ function CMOWorkspace() {
           >
             ESS
           </button>
-          {(isTeacher || isPrincipal || isHR) && (
+          {showTeacherNav && (
             <button
               onClick={() => navigate('teacher_management')}
               className={`whitespace-nowrap shrink-0 hover:text-slate-900 transition-colors ${
@@ -230,7 +236,7 @@ function CMOWorkspace() {
               Teacher Workspace
             </button>
           )}
-          {isHR && (
+          {showHRNav && (
             <button
               onClick={() => navigate('hr_control_panel')}
               className={`whitespace-nowrap shrink-0 hover:text-slate-900 transition-colors ${
@@ -240,7 +246,7 @@ function CMOWorkspace() {
               HR Control
             </button>
           )}
-          {isSuperAdmin && (
+          {showAdminNav && (
             <button
               onClick={() => navigate('super_admin_panel')}
               className={`whitespace-nowrap shrink-0 hover:text-slate-900 transition-colors ${
@@ -253,13 +259,23 @@ function CMOWorkspace() {
         </nav>
 
         <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={signOut}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors whitespace-nowrap shrink-0"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Sign Out
-          </button>
+          {firebaseUser ? (
+            <button
+              onClick={signOut}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors whitespace-nowrap shrink-0"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out
+            </button>
+          ) : (
+            <button
+              onClick={signInWithGoogle}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg transition-colors whitespace-nowrap shrink-0"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              Sign In
+            </button>
+          )}
         </div>
       </header>
 
@@ -316,13 +332,13 @@ function CMOWorkspace() {
               </div>
             </div>
 
-            {(isTeacher || isPrincipal || isHR || isSuperAdmin) && (
+            {(showTeacherNav || showHRNav || showAdminNav) && (
               <div className="pt-2 border-t border-slate-200">
                 <div className="px-3 mb-1.5 text-[11px] font-semibold text-slate-400">
                   Authority &amp; Control
                 </div>
                 <div className="space-y-0.5">
-                  {(isTeacher || isPrincipal || isHR) && (
+                  {showTeacherNav && (
                     <button
                       onClick={() => navigate('teacher_management')}
                       className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors ${
@@ -334,7 +350,7 @@ function CMOWorkspace() {
                       Teacher Management
                     </button>
                   )}
-                  {isHR && (
+                  {showHRNav && (
                     <button
                       onClick={() => navigate('hr_control_panel')}
                       className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors ${
@@ -346,7 +362,7 @@ function CMOWorkspace() {
                       HR Control Panel
                     </button>
                   )}
-                  {isSuperAdmin && (
+                  {showAdminNav && (
                     <button
                       onClick={() => navigate('super_admin_panel')}
                       className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors ${

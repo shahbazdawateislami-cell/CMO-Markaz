@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Download, Shield } from 'lucide-react';
-import { useCMO } from '../../context/CMOContext';
+import { AUTH_LOCK_ENABLED, useCMO } from '../../context/CMOContext';
 import { formatCounter, ModuleKey, UserRole } from '../../types';
 import { exportToCsv, sanitizeStr } from '../../utils/validation';
 import { CounterStat, EmptyState, SectionHeader, StatusTag } from '../SharedUI';
@@ -73,7 +73,7 @@ export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => v
     systemConfigs.find((c) => c.configType === 'master')?.academicYear || '2026-2027'
   );
 
-  if (!isHR) {
+  if ((AUTH_LOCK_ENABLED || firebaseUser) && !isHR) {
     return (
       <EmptyState
         title="Restricted to HR & Super Admin"
