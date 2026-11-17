@@ -1,0 +1,6 @@
+{
+  "name": "Markazi CMO",
+  "description": "Complete multi-branch institutional management software for Markazi CMO with ESS, ERP, HR & Payroll, E-Raseed, Online Admissions, Departments, and Role-Based Governance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

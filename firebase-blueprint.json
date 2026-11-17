@@ -1,0 +1,609 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated institutional user account and role-based access profile.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["super_admin", "hr", "principal", "teacher", "department_supervisor", "staff", "pending"] },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "pending", "suspended"] },
+        "permissions": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Division": {
+      "title": "Division",
+      "description": "Top-level geographic or organizational division for Madrasas.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "code": { "type": "string", "maxLength": 40 },
+        "headName": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "code", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Branch": {
+      "title": "Branch",
+      "description": "Multi-branch institutional campus or center.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "code": { "type": "string", "maxLength": 40 },
+        "divisionId": { "type": "string", "maxLength": 128 },
+        "institutionName": { "type": "string", "maxLength": 120 },
+        "city": { "type": "string", "maxLength": 100 },
+        "address": { "type": "string", "maxLength": 300 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "principalUid": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "code", "institutionName", "city", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "Institutional department linked to central CMO.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "slug": { "type": "string", "maxLength": 60 },
+        "type": { "type": "string", "enum": ["madrasas", "qadri40", "darul_ifta", "darul_qaza", "darul_iqama", "tahreek_bedari", "other"] },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "headUid": { "type": "string", "maxLength": 128 },
+        "supervisorUid": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "permissions": { "type": "array" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "slug", "type", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AcademicSession": {
+      "title": "AcademicSession",
+      "description": "Academic session for preserving historical student attendance and academic records.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "startDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "endDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "isCurrent": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "startDate", "endDate", "isCurrent", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AcademicClass": {
+      "title": "AcademicClass",
+      "description": "Madrasa Class/Section or QADRI 40 Course/Batch/Class hierarchy unit.",
+      "type": "object",
+      "properties": {
+        "programType": { "type": "string", "enum": ["madrasa", "qadri40"] },
+        "divisionId": { "type": "string", "maxLength": 128 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "courseName": { "type": "string", "maxLength": 120 },
+        "batchName": { "type": "string", "maxLength": 120 },
+        "className": { "type": "string", "maxLength": 120 },
+        "sectionName": { "type": "string", "maxLength": 60 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "supervisorUid": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["programType", "branchId", "className", "sessionId", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "TimetableEntry": {
+      "title": "TimetableEntry",
+      "description": "Class timetable slot assigned to teacher and class.",
+      "type": "object",
+      "properties": {
+        "classId": { "type": "string", "maxLength": 128 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "dayOfWeek": { "type": "string", "enum": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+        "startTime": { "type": "string", "maxLength": 5, "pattern": "^\\d{2}:\\d{2}$" },
+        "endTime": { "type": "string", "maxLength": 5, "pattern": "^\\d{2}:\\d{2}$" },
+        "subject": { "type": "string", "maxLength": 120 },
+        "room": { "type": "string", "maxLength": 60 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["classId", "branchId", "dayOfWeek", "startTime", "endTime", "subject", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Complete HR & Payroll employee profile, documents, onboarding, salary, and achievements.",
+      "type": "object",
+      "properties": {
+        "employeeCode": { "type": "string", "maxLength": 40 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 254 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "cnic": { "type": "string", "maxLength": 40 },
+        "designation": { "type": "string", "maxLength": 120 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "joiningDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "employmentStatus": { "type": "string", "enum": ["active", "probation", "on_leave", "resigned", "terminated"] },
+        "onboardingStatus": { "type": "string", "enum": ["recruitment", "onboarding", "completed"] },
+        "basicSalary": { "type": "number" },
+        "allowances": { "type": "number" },
+        "deductions": { "type": "number" },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "documents": { "type": "array" },
+        "achievements": { "type": "array" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employeeCode", "fullName", "email", "designation", "departmentId", "branchId", "joiningDate", "employmentStatus", "onboardingStatus", "basicSalary", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AttendanceTiming": {
+      "title": "AttendanceTiming",
+      "description": "Branch, department, or employee-wise manual attendance timing and lock policy.",
+      "type": "object",
+      "properties": {
+        "scopeType": { "type": "string", "enum": ["global", "branch", "department", "employee"] },
+        "scopeId": { "type": "string", "maxLength": 128 },
+        "scopeLabel": { "type": "string", "maxLength": 120 },
+        "startTime": { "type": "string", "maxLength": 5, "pattern": "^\\d{2}:\\d{2}$" },
+        "lateTime": { "type": "string", "maxLength": 5, "pattern": "^\\d{2}:\\d{2}$" },
+        "closingTime": { "type": "string", "maxLength": 5, "pattern": "^\\d{2}:\\d{2}$" },
+        "graceMinutes": { "type": "number" },
+        "isLocked": { "type": "boolean" },
+        "reopenedUntil": { "type": "string", "maxLength": 40 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["scopeType", "scopeId", "startTime", "lateTime", "closingTime", "graceMinutes", "isLocked", "updatedBy", "createdAt", "updatedAt"]
+    },
+    "EmployeeAttendance": {
+      "title": "EmployeeAttendance",
+      "description": "Manual employee/teacher attendance with Principal approval workflow.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "monthKey": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "markedTime": { "type": "string", "maxLength": 5, "pattern": "^\\d{2}:\\d{2}$" },
+        "status": { "type": "string", "enum": ["Present", "Absent", "Late", "Leave", "Half Day"] },
+        "approvalStatus": { "type": "string", "enum": ["pending_principal", "approved", "rejected"] },
+        "approvedBy": { "type": "string", "maxLength": 128 },
+        "approvedAt": { "type": "string", "maxLength": 40 },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "isLocked": { "type": "boolean" },
+        "reopenedByAdmin": { "type": "boolean" },
+        "correctionRequested": { "type": "boolean" },
+        "correctionReason": { "type": "string", "maxLength": 300 },
+        "correctionStatus": { "type": "string", "enum": ["none", "pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employeeId", "uid", "employeeName", "branchId", "departmentId", "date", "monthKey", "markedTime", "status", "approvalStatus", "isLocked", "createdAt", "updatedAt"]
+    },
+    "LeaveRequest": {
+      "title": "LeaveRequest",
+      "description": "Employee leave application linked to ESS and HR Control.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "leaveType": { "type": "string", "enum": ["Casual", "Sick", "Earned", "Emergency", "Unpaid"] },
+        "startDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "endDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "reason": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "reviewedBy": { "type": "string", "maxLength": 128 },
+        "reviewedAt": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employeeId", "uid", "employeeName", "leaveType", "startDate", "endDate", "reason", "status", "createdAt", "updatedAt"]
+    },
+    "PayrollRecord": {
+      "title": "PayrollRecord",
+      "description": "Monthly payroll generated strictly from approved employee attendance.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "employeeCode": { "type": "string", "maxLength": 40 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "monthKey": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "basicSalary": { "type": "number" },
+        "allowances": { "type": "number" },
+        "deductions": { "type": "number" },
+        "approvedDays": { "type": "number" },
+        "lateDays": { "type": "number" },
+        "halfDays": { "type": "number" },
+        "absentDays": { "type": "number" },
+        "netPayable": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "processed", "paid"] },
+        "generatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employeeId", "employeeCode", "employeeName", "monthKey", "basicSalary", "approvedDays", "netPayable", "status", "generatedBy", "createdAt", "updatedAt"]
+    },
+    "ExpenseClaim": {
+      "title": "ExpenseClaim",
+      "description": "Employee medical, travel, and other reimbursement claims.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "claimType": { "type": "string", "enum": ["Medical", "Travel", "Other"] },
+        "amount": { "type": "number" },
+        "description": { "type": "string", "maxLength": 500 },
+        "claimDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "paid"] },
+        "reviewedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employeeId", "uid", "employeeName", "claimType", "amount", "description", "claimDate", "status", "createdAt", "updatedAt"]
+    },
+    "Admission": {
+      "title": "Admission",
+      "description": "Online admission application requiring Teacher verification, HR verification, and Super Admin final approval.",
+      "type": "object",
+      "properties": {
+        "applicationNo": { "type": "string", "maxLength": 40 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "fatherName": { "type": "string", "maxLength": 120 },
+        "guardianPhone": { "type": "string", "maxLength": 40 },
+        "cnicOrBForm": { "type": "string", "maxLength": 40 },
+        "programType": { "type": "string", "enum": ["madrasa", "qadri40", "online_course"] },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "divisionId": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "workflowStatus": { "type": "string", "enum": ["pending_teacher", "teacher_verified", "hr_verified", "active", "rejected"] },
+        "teacherVerifiedBy": { "type": "string", "maxLength": 128 },
+        "teacherVerifiedAt": { "type": "string", "maxLength": 40 },
+        "hrVerifiedBy": { "type": "string", "maxLength": 128 },
+        "hrVerifiedAt": { "type": "string", "maxLength": 40 },
+        "superAdminApprovedBy": { "type": "string", "maxLength": 128 },
+        "superAdminApprovedAt": { "type": "string", "maxLength": 40 },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "submittedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["applicationNo", "studentName", "fatherName", "guardianPhone", "programType", "branchId", "sessionId", "workflowStatus", "submittedBy", "createdAt", "updatedAt"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Active institutional student record managed by teachers, HR, and departments (no personal student/parent portal).",
+      "type": "object",
+      "properties": {
+        "admissionId": { "type": "string", "maxLength": 128 },
+        "rollNo": { "type": "string", "maxLength": 40 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "fatherName": { "type": "string", "maxLength": 120 },
+        "guardianPhone": { "type": "string", "maxLength": 40 },
+        "programType": { "type": "string", "enum": ["madrasa", "qadri40", "online_course"] },
+        "divisionId": { "type": "string", "maxLength": 128 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "courseName": { "type": "string", "maxLength": 120 },
+        "batchName": { "type": "string", "maxLength": 120 },
+        "className": { "type": "string", "maxLength": 120 },
+        "sectionName": { "type": "string", "maxLength": 60 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["active", "inactive", "graduated"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["admissionId", "rollNo", "studentName", "fatherName", "programType", "branchId", "classId", "sessionId", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "StudentAttendance": {
+      "title": "StudentAttendance",
+      "description": "Immutable historical student attendance record separate from ESS, approved by Department Supervisor.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "rollNo": { "type": "string", "maxLength": 40 },
+        "programType": { "type": "string", "enum": ["madrasa", "qadri40"] },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "divisionId": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "monthKey": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "status": { "type": "string", "enum": ["Present", "Absent", "Leave", "Sick"] },
+        "markedBy": { "type": "string", "maxLength": 128 },
+        "markedByName": { "type": "string", "maxLength": 120 },
+        "approvalStatus": { "type": "string", "enum": ["pending_supervisor", "approved", "rejected"] },
+        "approvedBy": { "type": "string", "maxLength": 128 },
+        "approvedAt": { "type": "string", "maxLength": 40 },
+        "remarks": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "studentName", "rollNo", "programType", "branchId", "classId", "sessionId", "date", "monthKey", "status", "markedBy", "approvalStatus", "createdAt", "updatedAt"]
+    },
+    "AcademicRecord": {
+      "title": "AcademicRecord",
+      "description": "Homework, exams, tests, marks, results, and student academic progress.",
+      "type": "object",
+      "properties": {
+        "recordType": { "type": "string", "enum": ["homework", "exam", "mark", "progress"] },
+        "programType": { "type": "string", "enum": ["madrasa", "qadri40", "online_course"] },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "classId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "title": { "type": "string", "maxLength": 160 },
+        "subject": { "type": "string", "maxLength": 120 },
+        "dueDate": { "type": "string", "maxLength": 10 },
+        "maxMarks": { "type": "number" },
+        "obtainedMarks": { "type": "number" },
+        "grade": { "type": "string", "maxLength": 20 },
+        "remarks": { "type": "string", "maxLength": 500 },
+        "teacherUid": { "type": "string", "maxLength": 128 },
+        "teacherName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recordType", "branchId", "title", "subject", "teacherUid", "createdAt", "updatedAt"]
+    },
+    "DepartmentCase": {
+      "title": "DepartmentCase",
+      "description": "Operational records for Darul Ifta, Dar-ul-Qaza, Darul Iqama, Tahreek-e-Bedari, Digital Library, Online Courses, Existing Projects, and Upcoming Projects.",
+      "type": "object",
+      "properties": {
+        "moduleType": { "type": "string", "enum": ["darul_ifta", "darul_qaza", "darul_iqama", "tahreek_bedari", "digital_library", "online_courses", "project_existing", "project_upcoming"] },
+        "referenceCode": { "type": "string", "maxLength": 50 },
+        "title": { "type": "string", "maxLength": 160 },
+        "category": { "type": "string", "maxLength": 100 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "assignedUid": { "type": "string", "maxLength": 128 },
+        "personName": { "type": "string", "maxLength": 120 },
+        "details": { "type": "string", "maxLength": 1500 },
+        "status": { "type": "string", "maxLength": 40 },
+        "targetDate": { "type": "string", "maxLength": 10 },
+        "budgetAmount": { "type": "number" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["moduleType", "referenceCode", "title", "category", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "ERaseedReceipt": {
+      "title": "ERaseedReceipt",
+      "description": "E-Raseed financial receipt, donation, deposit, niyyat, and refund tracking.",
+      "type": "object",
+      "properties": {
+        "receiptNo": { "type": "string", "maxLength": 50 },
+        "receiptType": { "type": "string", "enum": ["Receipt", "Donation", "Deposit"] },
+        "institutionName": { "type": "string", "maxLength": 120 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "donorName": { "type": "string", "maxLength": 120 },
+        "donorPhone": { "type": "string", "maxLength": 40 },
+        "niyyat": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "maxLength": 100 },
+        "paymentMode": { "type": "string", "enum": ["Cash", "Bank Transfer", "Cheque", "Online"] },
+        "amount": { "type": "number" },
+        "receiptDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "monthKey": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "status": { "type": "string", "enum": ["active", "refunded", "cancelled"] },
+        "refundReason": { "type": "string", "maxLength": 300 },
+        "issuedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["receiptNo", "receiptType", "institutionName", "branchId", "donorName", "niyyat", "paymentMode", "amount", "receiptDate", "monthKey", "status", "issuedBy", "createdAt", "updatedAt"]
+    },
+    "FinanceEntry": {
+      "title": "FinanceEntry",
+      "description": "ERP & Finance ledger covering accounts, income, expenses, budgets, fees, and assets.",
+      "type": "object",
+      "properties": {
+        "entryType": { "type": "string", "enum": ["account", "income", "expense", "budget", "fee", "asset"] },
+        "institutionName": { "type": "string", "maxLength": 120 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 160 },
+        "accountCode": { "type": "string", "maxLength": 40 },
+        "category": { "type": "string", "maxLength": 100 },
+        "amount": { "type": "number" },
+        "fiscalMonth": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "entryDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "status": { "type": "string", "enum": ["posted", "pending", "cancelled"] },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["entryType", "institutionName", "branchId", "title", "category", "amount", "fiscalMonth", "entryDate", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Notice": {
+      "title": "Notice",
+      "description": "Institutional notice board and communication entry.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 160 },
+        "body": { "type": "string", "maxLength": 2000 },
+        "audience": { "type": "string", "enum": ["All Staff", "Teachers", "HR & Principals", "Department Specific"] },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "priority": { "type": "string", "enum": ["Normal", "Important", "Urgent"] },
+        "publishedBy": { "type": "string", "maxLength": 128 },
+        "publishedByName": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["published", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "body", "audience", "priority", "publishedBy", "status", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Append-only system log and approval audit trail.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "maxLength": 120 },
+        "module": { "type": "string", "maxLength": 80 },
+        "entityType": { "type": "string", "maxLength": 80 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 254 },
+        "actorRole": { "type": "string", "maxLength": 60 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "module", "entityType", "entityId", "actorUid", "actorEmail", "actorRole", "details", "createdAt"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Master institutional settings, E-Raseed config, and backup logs.",
+      "type": "object",
+      "properties": {
+        "configType": { "type": "string", "enum": ["master", "eraseed", "backup"] },
+        "institutionName": { "type": "string", "maxLength": 120 },
+        "receiptPrefix": { "type": "string", "maxLength": 20 },
+        "defaultCurrency": { "type": "string", "maxLength": 12 },
+        "academicYear": { "type": "string", "maxLength": 40 },
+        "lastBackupAt": { "type": "string", "maxLength": 40 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["configType", "updatedBy", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles and RBAC role assignments."
+    },
+    "/divisions/{divisionId}": {
+      "schema": { "$ref": "#/entities/Division" },
+      "description": "Madrasa divisions."
+    },
+    "/branches/{branchId}": {
+      "schema": { "$ref": "#/entities/Branch" },
+      "description": "Institutional branches."
+    },
+    "/departments/{departmentId}": {
+      "schema": { "$ref": "#/entities/Department" },
+      "description": "Institutional departments connected to central CMO."
+    },
+    "/academic_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/AcademicSession" },
+      "description": "Academic sessions."
+    },
+    "/classes/{classId}": {
+      "schema": { "$ref": "#/entities/AcademicClass" },
+      "description": "Madrasa classes/sections and QADRI 40 courses/batches/classes."
+    },
+    "/timetables/{timetableId}": {
+      "schema": { "$ref": "#/entities/TimetableEntry" },
+      "description": "Teacher and class timetable slots."
+    },
+    "/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Employee master records, documents, salary, and achievements."
+    },
+    "/attendance_timings/{timingId}": {
+      "schema": { "$ref": "#/entities/AttendanceTiming" },
+      "description": "Branch, department, and employee-wise attendance timings and locks."
+    },
+    "/employee_attendance/{recordId}": {
+      "schema": { "$ref": "#/entities/EmployeeAttendance" },
+      "description": "Manual employee/teacher attendance and Principal approval records."
+    },
+    "/leave_requests/{leaveId}": {
+      "schema": { "$ref": "#/entities/LeaveRequest" },
+      "description": "Employee leave applications."
+    },
+    "/payroll_records/{payrollId}": {
+      "schema": { "$ref": "#/entities/PayrollRecord" },
+      "description": "HR payroll records derived from approved attendance."
+    },
+    "/expense_claims/{claimId}": {
+      "schema": { "$ref": "#/entities/ExpenseClaim" },
+      "description": "Medical, travel, and other claims."
+    },
+    "/admissions/{admissionId}": {
+      "schema": { "$ref": "#/entities/Admission" },
+      "description": "Online admission applications and 3-stage approval workflow."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Active student roster activated upon Super Admin approval."
+    },
+    "/student_attendance/{recordId}": {
+      "schema": { "$ref": "#/entities/StudentAttendance" },
+      "description": "Permanent historical student attendance records separate from ESS."
+    },
+    "/academics/{itemId}": {
+      "schema": { "$ref": "#/entities/AcademicRecord" },
+      "description": "Homework, exams, marks, results, and student progress."
+    },
+    "/department_cases/{caseId}": {
+      "schema": { "$ref": "#/entities/DepartmentCase" },
+      "description": "Department-specific cases, library catalog, online courses, and projects."
+    },
+    "/eraseed_receipts/{receiptId}": {
+      "schema": { "$ref": "#/entities/ERaseedReceipt" },
+      "description": "E-Raseed receipts, donations, deposits, and refunds."
+    },
+    "/finance_ledger/{entryId}": {
+      "schema": { "$ref": "#/entities/FinanceEntry" },
+      "description": "ERP financial accounts, income, expenses, budgets, fees, and assets."
+    },
+    "/notices/{noticeId}": {
+      "schema": { "$ref": "#/entities/Notice" },
+      "description": "Notice board announcements."
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable system audit logs and approval history."
+    },
+    "/system_config/{configId}": {
+      "schema": { "$ref": "#/entities/SystemConfig" },
+      "description": "System master settings and backup metadata."
+    }
+  }
+}

@@ -1,0 +1,808 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Startup connection probe
+    match /test/connection {
+      allow get: if request.time != null;
+      allow list, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedSuperAdmin() {
+      return isVerified() && request.auth.token.email == 'shahbazdawateislami@gmail.com';
+    }
+
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isActiveUser() {
+      return isBootstrappedSuperAdmin() || (isVerified() && userExists() && userDoc().status == 'active');
+    }
+
+    function hasRole(r) {
+      return isActiveUser() && (
+        (r == 'super_admin' && isBootstrappedSuperAdmin()) ||
+        (userExists() && userDoc().role == r && userDoc().status == 'active')
+      );
+    }
+
+    function isSuperAdmin() {
+      return hasRole('super_admin');
+    }
+
+    function isHR() {
+      return hasRole('hr') || isSuperAdmin();
+    }
+
+    function isPrincipal() {
+      return hasRole('principal') || isSuperAdmin();
+    }
+
+    function isTeacher() {
+      return hasRole('teacher');
+    }
+
+    function isDeptSupervisor() {
+      return hasRole('department_supervisor');
+    }
+
+    function isInstitutionalStaff() {
+      return isActiveUser() && (
+        isBootstrappedSuperAdmin() ||
+        (userExists() && userDoc().role in ['super_admin', 'hr', 'principal', 'teacher', 'department_supervisor', 'staff'])
+      );
+    }
+
+    function isNonEmptyStr(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    function isOptStr(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isDateStr(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isMonthStr(val) {
+      return val is string && val.size() == 7 && val.matches('^\\d{4}-\\d{2}$');
+    }
+
+    function isTimeStr(val) {
+      return val is string && val.size() == 5 && val.matches('^\\d{2}:\\d{2}$');
+    }
+
+    function validCreateTimestamps(data) {
+      return data.createdAt is timestamp && data.createdAt == request.time &&
+             data.updatedAt is timestamp && data.updatedAt == request.time;
+    }
+
+    function validUpdateTimestamp(data) {
+      return data.updatedAt is timestamp && data.updatedAt == request.time;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'photoUrl', 'role', 'branchId', 'departmentId', 'employeeId', 'status', 'permissions', 'createdAt', 'updatedAt']) &&
+             isValidId(data.uid) && data.uid == userId &&
+             isNonEmptyStr(data.email, 254) &&
+             isNonEmptyStr(data.displayName, 120) &&
+             isOptStr(data, 'photoUrl', 500) &&
+             data.role in ['super_admin', 'hr', 'principal', 'teacher', 'department_supervisor', 'staff', 'pending'] &&
+             isOptStr(data, 'branchId', 128) &&
+             isOptStr(data, 'departmentId', 128) &&
+             isOptStr(data, 'employeeId', 128) &&
+             data.status in ['active', 'pending', 'suspended'] &&
+             (!('permissions' in data) || (data.permissions is list && data.permissions.size() <= 40 && (data.permissions.size() == 0 || data.permissions[0] is string)));
+    }
+
+    function isValidDivision(data) {
+      return data.keys().hasAll(['name', 'code', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'code', 'headName', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.name, 120) &&
+             isNonEmptyStr(data.code, 40) &&
+             isOptStr(data, 'headName', 120) &&
+             data.status in ['active', 'inactive'] &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidBranch(data) {
+      return data.keys().hasAll(['name', 'code', 'institutionName', 'city', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'code', 'divisionId', 'institutionName', 'city', 'address', 'phone', 'principalUid', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.name, 120) &&
+             isNonEmptyStr(data.code, 40) &&
+             isOptStr(data, 'divisionId', 128) &&
+             isNonEmptyStr(data.institutionName, 120) &&
+             isNonEmptyStr(data.city, 100) &&
+             isOptStr(data, 'address', 300) &&
+             isOptStr(data, 'phone', 40) &&
+             isOptStr(data, 'principalUid', 128) &&
+             data.status in ['active', 'inactive'] &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidDepartment(data) {
+      return data.keys().hasAll(['name', 'slug', 'type', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'slug', 'type', 'branchId', 'headUid', 'supervisorUid', 'status', 'permissions', 'createdBy', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.name, 120) &&
+             isNonEmptyStr(data.slug, 60) &&
+             data.type in ['madrasas', 'qadri40', 'darul_ifta', 'darul_qaza', 'darul_iqama', 'tahreek_bedari', 'other'] &&
+             isOptStr(data, 'branchId', 128) &&
+             isOptStr(data, 'headUid', 128) &&
+             isOptStr(data, 'supervisorUid', 128) &&
+             data.status in ['active', 'inactive'] &&
+             (!('permissions' in data) || (data.permissions is list && data.permissions.size() <= 40 && (data.permissions.size() == 0 || data.permissions[0] is string))) &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidSession(data) {
+      return data.keys().hasAll(['name', 'startDate', 'endDate', 'isCurrent', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'startDate', 'endDate', 'isCurrent', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.name, 100) &&
+             isDateStr(data.startDate) &&
+             isDateStr(data.endDate) &&
+             data.isCurrent is bool &&
+             data.status in ['active', 'archived'] &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidClass(data) {
+      return data.keys().hasAll(['programType', 'branchId', 'className', 'sessionId', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['programType', 'divisionId', 'branchId', 'courseName', 'batchName', 'className', 'sectionName', 'sessionId', 'teacherUid', 'supervisorUid', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.programType in ['madrasa', 'qadri40'] &&
+             isOptStr(data, 'divisionId', 128) &&
+             isValidId(data.branchId) &&
+             isOptStr(data, 'courseName', 120) &&
+             isOptStr(data, 'batchName', 120) &&
+             isNonEmptyStr(data.className, 120) &&
+             isOptStr(data, 'sectionName', 60) &&
+             isValidId(data.sessionId) &&
+             isOptStr(data, 'teacherUid', 128) &&
+             isOptStr(data, 'supervisorUid', 128) &&
+             data.status in ['active', 'inactive'] &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidTimetable(data) {
+      return data.keys().hasAll(['classId', 'branchId', 'dayOfWeek', 'startTime', 'endTime', 'subject', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['classId', 'branchId', 'teacherUid', 'dayOfWeek', 'startTime', 'endTime', 'subject', 'room', 'createdBy', 'createdAt', 'updatedAt']) &&
+             isValidId(data.classId) &&
+             isValidId(data.branchId) &&
+             isOptStr(data, 'teacherUid', 128) &&
+             data.dayOfWeek in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] &&
+             isTimeStr(data.startTime) &&
+             isTimeStr(data.endTime) &&
+             isNonEmptyStr(data.subject, 120) &&
+             isOptStr(data, 'room', 60) &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['employeeCode', 'fullName', 'email', 'designation', 'departmentId', 'branchId', 'joiningDate', 'employmentStatus', 'onboardingStatus', 'basicSalary', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['employeeCode', 'uid', 'fullName', 'email', 'phone', 'cnic', 'designation', 'departmentId', 'branchId', 'joiningDate', 'employmentStatus', 'onboardingStatus', 'basicSalary', 'allowances', 'deductions', 'photoUrl', 'documents', 'achievements', 'createdBy', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.employeeCode, 40) &&
+             isOptStr(data, 'uid', 128) &&
+             isNonEmptyStr(data.fullName, 120) &&
+             isNonEmptyStr(data.email, 254) &&
+             isOptStr(data, 'phone', 40) &&
+             isOptStr(data, 'cnic', 40) &&
+             isNonEmptyStr(data.designation, 120) &&
+             isValidId(data.departmentId) &&
+             isValidId(data.branchId) &&
+             isDateStr(data.joiningDate) &&
+             data.employmentStatus in ['active', 'probation', 'on_leave', 'resigned', 'terminated'] &&
+             data.onboardingStatus in ['recruitment', 'onboarding', 'completed'] &&
+             data.basicSalary is number && data.basicSalary >= 0 &&
+             (!('allowances' in data) || (data.allowances is number && data.allowances >= 0)) &&
+             (!('deductions' in data) || (data.deductions is number && data.deductions >= 0)) &&
+             isOptStr(data, 'photoUrl', 500) &&
+             (!('documents' in data) || (data.documents is list && data.documents.size() <= 25 && (data.documents.size() == 0 || data.documents[0] is string))) &&
+             (!('achievements' in data) || (data.achievements is list && data.achievements.size() <= 50 && (data.achievements.size() == 0 || data.achievements[0] is string))) &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidAttendanceTiming(data) {
+      return data.keys().hasAll(['scopeType', 'scopeId', 'startTime', 'lateTime', 'closingTime', 'graceMinutes', 'isLocked', 'updatedBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['scopeType', 'scopeId', 'scopeLabel', 'startTime', 'lateTime', 'closingTime', 'graceMinutes', 'isLocked', 'reopenedUntil', 'updatedBy', 'createdAt', 'updatedAt']) &&
+             data.scopeType in ['global', 'branch', 'department', 'employee'] &&
+             isNonEmptyStr(data.scopeId, 128) &&
+             isOptStr(data, 'scopeLabel', 120) &&
+             isTimeStr(data.startTime) &&
+             isTimeStr(data.lateTime) &&
+             isTimeStr(data.closingTime) &&
+             data.graceMinutes is number && data.graceMinutes >= 0 && data.graceMinutes <= 180 &&
+             data.isLocked is bool &&
+             isOptStr(data, 'reopenedUntil', 40) &&
+             isValidId(data.updatedBy);
+    }
+
+    function isValidEmployeeAttendance(data) {
+      return data.keys().hasAll(['employeeId', 'uid', 'employeeName', 'branchId', 'departmentId', 'date', 'monthKey', 'markedTime', 'status', 'approvalStatus', 'isLocked', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['employeeId', 'uid', 'employeeName', 'branchId', 'departmentId', 'date', 'monthKey', 'markedTime', 'status', 'approvalStatus', 'approvedBy', 'approvedAt', 'rejectionReason', 'isLocked', 'reopenedByAdmin', 'correctionRequested', 'correctionReason', 'correctionStatus', 'createdAt', 'updatedAt']) &&
+             isValidId(data.employeeId) &&
+             isValidId(data.uid) &&
+             isNonEmptyStr(data.employeeName, 120) &&
+             isValidId(data.branchId) &&
+             isValidId(data.departmentId) &&
+             isDateStr(data.date) &&
+             isMonthStr(data.monthKey) &&
+             isTimeStr(data.markedTime) &&
+             data.status in ['Present', 'Absent', 'Late', 'Leave', 'Half Day'] &&
+             data.approvalStatus in ['pending_principal', 'approved', 'rejected'] &&
+             isOptStr(data, 'approvedBy', 128) &&
+             isOptStr(data, 'approvedAt', 40) &&
+             isOptStr(data, 'rejectionReason', 300) &&
+             data.isLocked is bool &&
+             (!('reopenedByAdmin' in data) || data.reopenedByAdmin is bool) &&
+             (!('correctionRequested' in data) || data.correctionRequested is bool) &&
+             isOptStr(data, 'correctionReason', 300) &&
+             (!('correctionStatus' in data) || data.correctionStatus in ['none', 'pending', 'approved', 'rejected']);
+    }
+
+    function isValidLeaveRequest(data) {
+      return data.keys().hasAll(['employeeId', 'uid', 'employeeName', 'leaveType', 'startDate', 'endDate', 'reason', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['employeeId', 'uid', 'employeeName', 'branchId', 'departmentId', 'leaveType', 'startDate', 'endDate', 'reason', 'status', 'reviewedBy', 'reviewedAt', 'createdAt', 'updatedAt']) &&
+             isValidId(data.employeeId) &&
+             isValidId(data.uid) &&
+             isNonEmptyStr(data.employeeName, 120) &&
+             isOptStr(data, 'branchId', 128) &&
+             isOptStr(data, 'departmentId', 128) &&
+             data.leaveType in ['Casual', 'Sick', 'Earned', 'Emergency', 'Unpaid'] &&
+             isDateStr(data.startDate) &&
+             isDateStr(data.endDate) &&
+             isNonEmptyStr(data.reason, 500) &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             isOptStr(data, 'reviewedBy', 128) &&
+             isOptStr(data, 'reviewedAt', 40);
+    }
+
+    function isValidPayrollRecord(data) {
+      return data.keys().hasAll(['employeeId', 'employeeCode', 'employeeName', 'monthKey', 'basicSalary', 'approvedDays', 'netPayable', 'status', 'generatedBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['employeeId', 'employeeCode', 'employeeName', 'branchId', 'departmentId', 'monthKey', 'basicSalary', 'allowances', 'deductions', 'approvedDays', 'lateDays', 'halfDays', 'absentDays', 'netPayable', 'status', 'generatedBy', 'createdAt', 'updatedAt']) &&
+             isValidId(data.employeeId) &&
+             isNonEmptyStr(data.employeeCode, 40) &&
+             isNonEmptyStr(data.employeeName, 120) &&
+             isOptStr(data, 'branchId', 128) &&
+             isOptStr(data, 'departmentId', 128) &&
+             isMonthStr(data.monthKey) &&
+             data.basicSalary is number && data.basicSalary >= 0 &&
+             (!('allowances' in data) || (data.allowances is number && data.allowances >= 0)) &&
+             (!('deductions' in data) || (data.deductions is number && data.deductions >= 0)) &&
+             data.approvedDays is number && data.approvedDays >= 0 &&
+             (!('lateDays' in data) || (data.lateDays is number && data.lateDays >= 0)) &&
+             (!('halfDays' in data) || (data.halfDays is number && data.halfDays >= 0)) &&
+             (!('absentDays' in data) || (data.absentDays is number && data.absentDays >= 0)) &&
+             data.netPayable is number && data.netPayable >= 0 &&
+             data.status in ['draft', 'processed', 'paid'] &&
+             isValidId(data.generatedBy);
+    }
+
+    function isValidExpenseClaim(data) {
+      return data.keys().hasAll(['employeeId', 'uid', 'employeeName', 'claimType', 'amount', 'description', 'claimDate', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['employeeId', 'uid', 'employeeName', 'claimType', 'amount', 'description', 'claimDate', 'status', 'reviewedBy', 'createdAt', 'updatedAt']) &&
+             isValidId(data.employeeId) &&
+             isValidId(data.uid) &&
+             isNonEmptyStr(data.employeeName, 120) &&
+             data.claimType in ['Medical', 'Travel', 'Other'] &&
+             data.amount is number && data.amount > 0 &&
+             isNonEmptyStr(data.description, 500) &&
+             isDateStr(data.claimDate) &&
+             data.status in ['pending', 'approved', 'rejected', 'paid'] &&
+             isOptStr(data, 'reviewedBy', 128);
+    }
+
+    function isValidAdmission(data) {
+      return data.keys().hasAll(['applicationNo', 'studentName', 'fatherName', 'guardianPhone', 'programType', 'branchId', 'sessionId', 'workflowStatus', 'submittedBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['applicationNo', 'studentName', 'fatherName', 'guardianPhone', 'cnicOrBForm', 'programType', 'departmentId', 'branchId', 'divisionId', 'classId', 'sessionId', 'photoUrl', 'notes', 'workflowStatus', 'teacherVerifiedBy', 'teacherVerifiedAt', 'hrVerifiedBy', 'hrVerifiedAt', 'superAdminApprovedBy', 'superAdminApprovedAt', 'rejectionReason', 'submittedBy', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.applicationNo, 40) &&
+             isNonEmptyStr(data.studentName, 120) &&
+             isNonEmptyStr(data.fatherName, 120) &&
+             isNonEmptyStr(data.guardianPhone, 40) &&
+             isOptStr(data, 'cnicOrBForm', 40) &&
+             data.programType in ['madrasa', 'qadri40', 'online_course'] &&
+             isOptStr(data, 'departmentId', 128) &&
+             isValidId(data.branchId) &&
+             isOptStr(data, 'divisionId', 128) &&
+             isOptStr(data, 'classId', 128) &&
+             isValidId(data.sessionId) &&
+             isOptStr(data, 'photoUrl', 500) &&
+             isOptStr(data, 'notes', 500) &&
+             data.workflowStatus in ['pending_teacher', 'teacher_verified', 'hr_verified', 'active', 'rejected'] &&
+             isOptStr(data, 'teacherVerifiedBy', 128) &&
+             isOptStr(data, 'teacherVerifiedAt', 40) &&
+             isOptStr(data, 'hrVerifiedBy', 128) &&
+             isOptStr(data, 'hrVerifiedAt', 40) &&
+             isOptStr(data, 'superAdminApprovedBy', 128) &&
+             isOptStr(data, 'superAdminApprovedAt', 40) &&
+             isOptStr(data, 'rejectionReason', 300) &&
+             isValidId(data.submittedBy);
+    }
+
+    function isValidStudent(data) {
+      return data.keys().hasAll(['admissionId', 'rollNo', 'studentName', 'fatherName', 'programType', 'branchId', 'classId', 'sessionId', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['admissionId', 'rollNo', 'studentName', 'fatherName', 'guardianPhone', 'programType', 'divisionId', 'branchId', 'departmentId', 'classId', 'courseName', 'batchName', 'className', 'sectionName', 'sessionId', 'photoUrl', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             isValidId(data.admissionId) &&
+             isNonEmptyStr(data.rollNo, 40) &&
+             isNonEmptyStr(data.studentName, 120) &&
+             isNonEmptyStr(data.fatherName, 120) &&
+             isOptStr(data, 'guardianPhone', 40) &&
+             data.programType in ['madrasa', 'qadri40', 'online_course'] &&
+             isOptStr(data, 'divisionId', 128) &&
+             isValidId(data.branchId) &&
+             isOptStr(data, 'departmentId', 128) &&
+             isValidId(data.classId) &&
+             isOptStr(data, 'courseName', 120) &&
+             isOptStr(data, 'batchName', 120) &&
+             isOptStr(data, 'className', 120) &&
+             isOptStr(data, 'sectionName', 60) &&
+             isValidId(data.sessionId) &&
+             isOptStr(data, 'photoUrl', 500) &&
+             data.status in ['active', 'inactive', 'graduated'] &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidStudentAttendance(data) {
+      return data.keys().hasAll(['studentId', 'studentName', 'rollNo', 'programType', 'branchId', 'classId', 'sessionId', 'date', 'monthKey', 'status', 'markedBy', 'approvalStatus', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['studentId', 'studentName', 'rollNo', 'programType', 'branchId', 'divisionId', 'classId', 'sessionId', 'date', 'monthKey', 'status', 'markedBy', 'markedByName', 'approvalStatus', 'approvedBy', 'approvedAt', 'remarks', 'createdAt', 'updatedAt']) &&
+             isValidId(data.studentId) &&
+             isNonEmptyStr(data.studentName, 120) &&
+             isNonEmptyStr(data.rollNo, 40) &&
+             data.programType in ['madrasa', 'qadri40'] &&
+             isValidId(data.branchId) &&
+             isOptStr(data, 'divisionId', 128) &&
+             isValidId(data.classId) &&
+             isValidId(data.sessionId) &&
+             isDateStr(data.date) &&
+             isMonthStr(data.monthKey) &&
+             data.status in ['Present', 'Absent', 'Leave', 'Sick'] &&
+             isValidId(data.markedBy) &&
+             isOptStr(data, 'markedByName', 120) &&
+             data.approvalStatus in ['pending_supervisor', 'approved', 'rejected'] &&
+             isOptStr(data, 'approvedBy', 128) &&
+             isOptStr(data, 'approvedAt', 40) &&
+             isOptStr(data, 'remarks', 300);
+    }
+
+    function isValidAcademicRecord(data) {
+      return data.keys().hasAll(['recordType', 'branchId', 'title', 'subject', 'teacherUid', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['recordType', 'programType', 'branchId', 'departmentId', 'classId', 'studentId', 'studentName', 'title', 'subject', 'dueDate', 'maxMarks', 'obtainedMarks', 'grade', 'remarks', 'teacherUid', 'teacherName', 'createdAt', 'updatedAt']) &&
+             data.recordType in ['homework', 'exam', 'mark', 'progress'] &&
+             isOptStr(data, 'programType', 30) &&
+             isValidId(data.branchId) &&
+             isOptStr(data, 'departmentId', 128) &&
+             isOptStr(data, 'classId', 128) &&
+             isOptStr(data, 'studentId', 128) &&
+             isOptStr(data, 'studentName', 120) &&
+             isNonEmptyStr(data.title, 160) &&
+             isNonEmptyStr(data.subject, 120) &&
+             isOptStr(data, 'dueDate', 10) &&
+             (!('maxMarks' in data) || (data.maxMarks is number && data.maxMarks >= 0)) &&
+             (!('obtainedMarks' in data) || (data.obtainedMarks is number && data.obtainedMarks >= 0)) &&
+             isOptStr(data, 'grade', 20) &&
+             isOptStr(data, 'remarks', 500) &&
+             isValidId(data.teacherUid) &&
+             isOptStr(data, 'teacherName', 120);
+    }
+
+    function isValidDepartmentCase(data) {
+      return data.keys().hasAll(['moduleType', 'referenceCode', 'title', 'category', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['moduleType', 'referenceCode', 'title', 'category', 'branchId', 'departmentId', 'assignedUid', 'personName', 'details', 'status', 'targetDate', 'budgetAmount', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.moduleType in ['darul_ifta', 'darul_qaza', 'darul_iqama', 'tahreek_bedari', 'digital_library', 'online_courses', 'project_existing', 'project_upcoming'] &&
+             isNonEmptyStr(data.referenceCode, 50) &&
+             isNonEmptyStr(data.title, 160) &&
+             isNonEmptyStr(data.category, 100) &&
+             isOptStr(data, 'branchId', 128) &&
+             isOptStr(data, 'departmentId', 128) &&
+             isOptStr(data, 'assignedUid', 128) &&
+             isOptStr(data, 'personName', 120) &&
+             isOptStr(data, 'details', 1500) &&
+             isNonEmptyStr(data.status, 40) &&
+             isOptStr(data, 'targetDate', 10) &&
+             (!('budgetAmount' in data) || (data.budgetAmount is number && data.budgetAmount >= 0)) &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidERaseed(data) {
+      return data.keys().hasAll(['receiptNo', 'receiptType', 'institutionName', 'branchId', 'donorName', 'niyyat', 'paymentMode', 'amount', 'receiptDate', 'monthKey', 'status', 'issuedBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['receiptNo', 'receiptType', 'institutionName', 'branchId', 'donorName', 'donorPhone', 'niyyat', 'category', 'paymentMode', 'amount', 'receiptDate', 'monthKey', 'status', 'refundReason', 'issuedBy', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.receiptNo, 50) &&
+             data.receiptType in ['Receipt', 'Donation', 'Deposit'] &&
+             isNonEmptyStr(data.institutionName, 120) &&
+             isValidId(data.branchId) &&
+             isNonEmptyStr(data.donorName, 120) &&
+             isOptStr(data, 'donorPhone', 40) &&
+             isNonEmptyStr(data.niyyat, 120) &&
+             isOptStr(data, 'category', 100) &&
+             data.paymentMode in ['Cash', 'Bank Transfer', 'Cheque', 'Online'] &&
+             data.amount is number && data.amount > 0 &&
+             isDateStr(data.receiptDate) &&
+             isMonthStr(data.monthKey) &&
+             data.status in ['active', 'refunded', 'cancelled'] &&
+             isOptStr(data, 'refundReason', 300) &&
+             isValidId(data.issuedBy);
+    }
+
+    function isValidFinanceEntry(data) {
+      return data.keys().hasAll(['entryType', 'institutionName', 'branchId', 'title', 'category', 'amount', 'fiscalMonth', 'entryDate', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['entryType', 'institutionName', 'branchId', 'departmentId', 'title', 'accountCode', 'category', 'amount', 'fiscalMonth', 'entryDate', 'status', 'notes', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.entryType in ['account', 'income', 'expense', 'budget', 'fee', 'asset'] &&
+             isNonEmptyStr(data.institutionName, 120) &&
+             isValidId(data.branchId) &&
+             isOptStr(data, 'departmentId', 128) &&
+             isNonEmptyStr(data.title, 160) &&
+             isOptStr(data, 'accountCode', 40) &&
+             isNonEmptyStr(data.category, 100) &&
+             data.amount is number && data.amount >= 0 &&
+             isMonthStr(data.fiscalMonth) &&
+             isDateStr(data.entryDate) &&
+             data.status in ['posted', 'pending', 'cancelled'] &&
+             isOptStr(data, 'notes', 500) &&
+             isValidId(data.createdBy);
+    }
+
+    function isValidNotice(data) {
+      return data.keys().hasAll(['title', 'body', 'audience', 'priority', 'publishedBy', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['title', 'body', 'audience', 'branchId', 'departmentId', 'priority', 'publishedBy', 'publishedByName', 'status', 'createdAt', 'updatedAt']) &&
+             isNonEmptyStr(data.title, 160) &&
+             isNonEmptyStr(data.body, 2000) &&
+             data.audience in ['All Staff', 'Teachers', 'HR & Principals', 'Department Specific'] &&
+             isOptStr(data, 'branchId', 128) &&
+             isOptStr(data, 'departmentId', 128) &&
+             data.priority in ['Normal', 'Important', 'Urgent'] &&
+             isValidId(data.publishedBy) &&
+             isOptStr(data, 'publishedByName', 120) &&
+             data.status in ['published', 'archived'];
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['action', 'module', 'entityType', 'entityId', 'actorUid', 'actorEmail', 'actorRole', 'details', 'createdAt']) &&
+             data.keys().hasOnly(['action', 'module', 'entityType', 'entityId', 'actorUid', 'actorEmail', 'actorRole', 'details', 'createdAt']) &&
+             isNonEmptyStr(data.action, 120) &&
+             isNonEmptyStr(data.module, 80) &&
+             isNonEmptyStr(data.entityType, 80) &&
+             isNonEmptyStr(data.entityId, 128) &&
+             isValidId(data.actorUid) && data.actorUid == request.auth.uid &&
+             isNonEmptyStr(data.actorEmail, 254) &&
+             isNonEmptyStr(data.actorRole, 60) &&
+             isNonEmptyStr(data.details, 1000) &&
+             data.createdAt is timestamp && data.createdAt == request.time;
+    }
+
+    function isValidSystemConfig(data) {
+      return data.keys().hasAll(['configType', 'updatedBy', 'updatedAt']) &&
+             data.keys().hasOnly(['configType', 'institutionName', 'receiptPrefix', 'defaultCurrency', 'academicYear', 'lastBackupAt', 'updatedBy', 'updatedAt']) &&
+             data.configType in ['master', 'eraseed', 'backup'] &&
+             isOptStr(data, 'institutionName', 120) &&
+             isOptStr(data, 'receiptPrefix', 20) &&
+             isOptStr(data, 'defaultCurrency', 12) &&
+             isOptStr(data, 'academicYear', 40) &&
+             isOptStr(data, 'lastBackupAt', 40) &&
+             isValidId(data.updatedBy) &&
+             validUpdateTimestamp(data);
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Users & RBAC
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isVerified() && (userId == request.auth.uid || isHR() || isPrincipal() || isTeacher() || isDeptSupervisor());
+      allow list: if isVerified() && (resource.data.uid == request.auth.uid || ((isBootstrappedSuperAdmin() || isHR() || isPrincipal()) && resource.data.status in ['active', 'pending', 'suspended']));
+
+      allow create: if isValidId(userId) && isVerified() &&
+        isValidUserProfile(incoming(), userId) &&
+        validCreateTimestamps(incoming()) && (
+          (userId == request.auth.uid && isBootstrappedSuperAdmin() && incoming().role == 'super_admin' && incoming().status == 'active') ||
+          (userId == request.auth.uid && incoming().role == 'pending' && incoming().status == 'pending') ||
+          (isSuperAdmin())
+        );
+
+      allow update: if isValidId(userId) && isVerified() &&
+        isValidUserProfile(incoming(), userId) &&
+        validUpdateTimestamp(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt && (
+          isSuperAdmin() ||
+          (isHR() && existing().role != 'super_admin' && incoming().role != 'super_admin' && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'branchId', 'departmentId', 'employeeId', 'status', 'permissions', 'updatedAt'])) ||
+          (userId == request.auth.uid && incoming().role == existing().role && incoming().status == existing().status && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'updatedAt']))
+        );
+
+      allow delete: if isValidId(userId) && isSuperAdmin();
+    }
+
+    // 2. Divisions
+    match /divisions/{divisionId} {
+      allow get: if isValidId(divisionId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.status in ['active', 'inactive'];
+      allow create: if isValidId(divisionId) && isHR() && isValidDivision(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isValidId(divisionId) && isHR() && isValidDivision(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(divisionId) && isSuperAdmin();
+    }
+
+    // 3. Branches
+    match /branches/{branchId} {
+      allow get: if isValidId(branchId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.status in ['active', 'inactive'];
+      allow create: if isValidId(branchId) && isHR() && isValidBranch(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isValidId(branchId) && isHR() && isValidBranch(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(branchId) && isSuperAdmin();
+    }
+
+    // 4. Departments
+    match /departments/{departmentId} {
+      allow get: if isValidId(departmentId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.status in ['active', 'inactive'];
+      allow create: if isValidId(departmentId) && isHR() && isValidDepartment(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isValidId(departmentId) && isHR() && isValidDepartment(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(departmentId) && isSuperAdmin();
+    }
+
+    // 5. Academic Sessions
+    match /academic_sessions/{sessionId} {
+      allow get: if isValidId(sessionId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.status in ['active', 'archived'];
+      allow create: if isValidId(sessionId) && isHR() && isValidSession(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isValidId(sessionId) && isHR() && isValidSession(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(sessionId) && isSuperAdmin();
+    }
+
+    // 6. Classes (Madrasa Class/Section & QADRI 40 Course/Batch/Class)
+    match /classes/{classId} {
+      allow get: if isValidId(classId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.status in ['active', 'inactive'];
+      allow create: if isValidId(classId) && (isHR() || isPrincipal()) && isValidClass(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/branches/$(incoming().branchId)) && exists(/databases/$(database)/documents/academic_sessions/$(incoming().sessionId));
+      allow update: if isValidId(classId) && (isHR() || isPrincipal()) && isValidClass(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(classId) && isSuperAdmin();
+    }
+
+    // 7. Timetables
+    match /timetables/{timetableId} {
+      allow get: if isValidId(timetableId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.dayOfWeek in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      allow create: if isValidId(timetableId) && (isHR() || isPrincipal() || isTeacher()) && isValidTimetable(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/classes/$(incoming().classId));
+      allow update: if isValidId(timetableId) && (isHR() || isPrincipal() || (isTeacher() && existing().createdBy == request.auth.uid)) && isValidTimetable(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(timetableId) && (isSuperAdmin() || isHR());
+    }
+
+    // 8. Employees (PII isolated)
+    match /employees/{employeeId} {
+      allow get: if isValidId(employeeId) && isInstitutionalStaff() && (isHR() || isPrincipal() || ('uid' in existing() && existing().uid == request.auth.uid));
+      allow list: if isInstitutionalStaff() && (isHR() || isPrincipal() || ('uid' in resource.data && resource.data.uid == request.auth.uid));
+      allow create: if isValidId(employeeId) && isHR() && isValidEmployee(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/branches/$(incoming().branchId)) && exists(/databases/$(database)/documents/departments/$(incoming().departmentId));
+      allow update: if isValidId(employeeId) && isValidEmployee(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isHR() ||
+        ('uid' in existing() && existing().uid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['photoUrl', 'phone', 'updatedAt']))
+      );
+      allow delete: if isValidId(employeeId) && isSuperAdmin();
+    }
+
+    // 9. Attendance Timings (Branch / Dept / Employee policies)
+    match /attendance_timings/{timingId} {
+      allow get: if isValidId(timingId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.scopeType in ['global', 'branch', 'department', 'employee'];
+      allow create: if isValidId(timingId) && isSuperAdmin() && isValidAttendanceTiming(incoming()) && validCreateTimestamps(incoming()) && incoming().updatedBy == request.auth.uid;
+      allow update: if isValidId(timingId) && isSuperAdmin() && isValidAttendanceTiming(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdAt == existing().createdAt && incoming().updatedBy == request.auth.uid;
+      allow delete: if isValidId(timingId) && isSuperAdmin();
+    }
+
+    // 10. Employee / Teacher Attendance (Manual + Principal Approval)
+    match /employee_attendance/{recordId} {
+      allow get: if isValidId(recordId) && isInstitutionalStaff() && (isHR() || isPrincipal() || existing().uid == request.auth.uid);
+      allow list: if isInstitutionalStaff() && (isHR() || isPrincipal() || resource.data.uid == request.auth.uid);
+
+      allow create: if isValidId(recordId) && isInstitutionalStaff() &&
+        isValidEmployeeAttendance(incoming()) &&
+        validCreateTimestamps(incoming()) &&
+        exists(/databases/$(database)/documents/employees/$(incoming().employeeId)) && (
+          isSuperAdmin() ||
+          (incoming().uid == request.auth.uid && incoming().approvalStatus == 'pending_principal' && incoming().isLocked == false)
+        );
+
+      allow update: if isValidId(recordId) && isInstitutionalStaff() &&
+        isValidEmployeeAttendance(incoming()) &&
+        validUpdateTimestamp(incoming()) &&
+        incoming().employeeId == existing().employeeId &&
+        incoming().uid == existing().uid &&
+        incoming().date == existing().date &&
+        incoming().monthKey == existing().monthKey &&
+        incoming().createdAt == existing().createdAt && (
+          isSuperAdmin() ||
+          // Principal approves or rejects attendance (cannot unlock locked attendance)
+          (isPrincipal() && incoming().isLocked == existing().isLocked && incoming().diff(existing()).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectionReason', 'correctionStatus', 'status', 'updatedAt']) && incoming().approvedBy == request.auth.uid) ||
+          // Employee requests correction (cannot change approvalStatus or isLocked)
+          (existing().uid == request.auth.uid && incoming().approvalStatus == existing().approvalStatus && incoming().isLocked == existing().isLocked && incoming().diff(existing()).affectedKeys().hasOnly(['correctionRequested', 'correctionReason', 'correctionStatus', 'updatedAt']))
+        );
+
+      allow delete: if isValidId(recordId) && isSuperAdmin();
+    }
+
+    // 11. Leave Requests
+    match /leave_requests/{leaveId} {
+      allow get: if isValidId(leaveId) && isInstitutionalStaff() && (isHR() || isPrincipal() || existing().uid == request.auth.uid);
+      allow list: if isInstitutionalStaff() && (isHR() || isPrincipal() || resource.data.uid == request.auth.uid);
+      allow create: if isValidId(leaveId) && isInstitutionalStaff() && isValidLeaveRequest(incoming()) && validCreateTimestamps(incoming()) && incoming().uid == request.auth.uid && incoming().status == 'pending';
+      allow update: if isValidId(leaveId) && isInstitutionalStaff() && isValidLeaveRequest(incoming()) && validUpdateTimestamp(incoming()) && incoming().uid == existing().uid && incoming().createdAt == existing().createdAt && (
+        isSuperAdmin() ||
+        ((isHR() || isPrincipal()) && existing().status == 'pending' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'updatedAt']))
+      );
+      allow delete: if isValidId(leaveId) && isSuperAdmin();
+    }
+
+    // 12. Payroll Records
+    match /payroll_records/{payrollId} {
+      allow get: if isValidId(payrollId) && isInstitutionalStaff() && (isHR() || ('employeeId' in userDoc() && existing().employeeId == userDoc().employeeId));
+      allow list: if isInstitutionalStaff() && (isHR() || ('employeeId' in userDoc() && resource.data.employeeId == userDoc().employeeId));
+      allow create: if isValidId(payrollId) && isHR() && isValidPayrollRecord(incoming()) && validCreateTimestamps(incoming()) && incoming().generatedBy == request.auth.uid;
+      allow update: if isValidId(payrollId) && isHR() && isValidPayrollRecord(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdAt == existing().createdAt && (isSuperAdmin() || existing().status != 'paid');
+      allow delete: if isValidId(payrollId) && isSuperAdmin();
+    }
+
+    // 13. Expense Claims
+    match /expense_claims/{claimId} {
+      allow get: if isValidId(claimId) && isInstitutionalStaff() && (isHR() || existing().uid == request.auth.uid);
+      allow list: if isInstitutionalStaff() && (isHR() || resource.data.uid == request.auth.uid);
+      allow create: if isValidId(claimId) && isInstitutionalStaff() && isValidExpenseClaim(incoming()) && validCreateTimestamps(incoming()) && incoming().uid == request.auth.uid && incoming().status == 'pending';
+      allow update: if isValidId(claimId) && isHR() && isValidExpenseClaim(incoming()) && validUpdateTimestamp(incoming()) && incoming().uid == existing().uid && incoming().createdAt == existing().createdAt && (isSuperAdmin() || existing().status != 'paid');
+      allow delete: if isValidId(claimId) && isSuperAdmin();
+    }
+
+    // 14. Online Admissions (Teacher -> HR -> Super Admin)
+    match /admissions/{admissionId} {
+      allow get: if isValidId(admissionId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.workflowStatus in ['pending_teacher', 'teacher_verified', 'hr_verified', 'active', 'rejected'];
+
+      allow create: if isValidId(admissionId) && isInstitutionalStaff() &&
+        isValidAdmission(incoming()) &&
+        validCreateTimestamps(incoming()) &&
+        incoming().submittedBy == request.auth.uid &&
+        incoming().workflowStatus == 'pending_teacher' &&
+        exists(/databases/$(database)/documents/branches/$(incoming().branchId)) &&
+        exists(/databases/$(database)/documents/academic_sessions/$(incoming().sessionId));
+
+      allow update: if isValidId(admissionId) && isInstitutionalStaff() &&
+        isValidAdmission(incoming()) &&
+        validUpdateTimestamp(incoming()) &&
+        incoming().submittedBy == existing().submittedBy &&
+        incoming().createdAt == existing().createdAt && (
+          isSuperAdmin() ||
+          ((isTeacher() || isPrincipal()) && existing().workflowStatus == 'pending_teacher' && incoming().workflowStatus in ['teacher_verified', 'rejected'] && incoming().teacherVerifiedBy == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['workflowStatus', 'teacherVerifiedBy', 'teacherVerifiedAt', 'rejectionReason', 'updatedAt'])) ||
+          (isHR() && existing().workflowStatus == 'teacher_verified' && incoming().workflowStatus in ['hr_verified', 'rejected'] && incoming().hrVerifiedBy == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['workflowStatus', 'hrVerifiedBy', 'hrVerifiedAt', 'rejectionReason', 'updatedAt']))
+        );
+
+      allow delete: if isValidId(admissionId) && isSuperAdmin();
+    }
+
+    // 15. Active Students (Activated ONLY after Super Admin admission approval)
+    match /students/{studentId} {
+      allow get: if isValidId(studentId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.status in ['active', 'inactive', 'graduated'];
+      allow create: if isValidId(studentId) && isSuperAdmin() && isValidStudent(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && getAfter(/databases/$(database)/documents/admissions/$(incoming().admissionId)).data.workflowStatus == 'active';
+      allow update: if isValidId(studentId) && (isSuperAdmin() || isHR()) && isValidStudent(incoming()) && validUpdateTimestamp(incoming()) && incoming().admissionId == existing().admissionId && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(studentId) && isSuperAdmin();
+    }
+
+    // 16. Student Attendance (Separate from ESS, never deleted on new month, Supervisor approval)
+    match /student_attendance/{recordId} {
+      allow get: if isValidId(recordId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.programType in ['madrasa', 'qadri40'];
+
+      allow create: if isValidId(recordId) && (isTeacher() || isDeptSupervisor() || isPrincipal() || isHR()) &&
+        isValidStudentAttendance(incoming()) &&
+        validCreateTimestamps(incoming()) &&
+        incoming().markedBy == request.auth.uid &&
+        exists(/databases/$(database)/documents/students/$(incoming().studentId)) &&
+        exists(/databases/$(database)/documents/classes/$(incoming().classId)) && (
+          isSuperAdmin() || isDeptSupervisor() || isHR() ||
+          incoming().approvalStatus == 'pending_supervisor'
+        );
+
+      allow update: if isValidId(recordId) && isInstitutionalStaff() &&
+        isValidStudentAttendance(incoming()) &&
+        validUpdateTimestamp(incoming()) &&
+        incoming().studentId == existing().studentId &&
+        incoming().date == existing().date &&
+        incoming().monthKey == existing().monthKey &&
+        incoming().sessionId == existing().sessionId &&
+        incoming().createdAt == existing().createdAt && (
+          isSuperAdmin() ||
+          ((isDeptSupervisor() || isHR()) && incoming().diff(existing()).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'status', 'remarks', 'updatedAt']) && incoming().approvedBy == request.auth.uid)
+        );
+
+      allow delete: if isValidId(recordId) && isSuperAdmin();
+    }
+
+    // 17. Academic Records (Homework, Exams, Marks, Results, Progress)
+    match /academics/{itemId} {
+      allow get: if isValidId(itemId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.recordType in ['homework', 'exam', 'mark', 'progress'];
+      allow create: if isValidId(itemId) && (isTeacher() || isPrincipal() || isHR()) && isValidAcademicRecord(incoming()) && validCreateTimestamps(incoming()) && incoming().teacherUid == request.auth.uid;
+      allow update: if isValidId(itemId) && isValidAcademicRecord(incoming()) && validUpdateTimestamp(incoming()) && incoming().teacherUid == existing().teacherUid && incoming().createdAt == existing().createdAt && (isSuperAdmin() || isHR() || existing().teacherUid == request.auth.uid);
+      allow delete: if isValidId(itemId) && (isSuperAdmin() || isHR());
+    }
+
+    // 18. Department Cases, Library, Courses & Projects
+    match /department_cases/{caseId} {
+      allow get: if isValidId(caseId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.moduleType in ['darul_ifta', 'darul_qaza', 'darul_iqama', 'tahreek_bedari', 'digital_library', 'online_courses', 'project_existing', 'project_upcoming'];
+      allow create: if isValidId(caseId) && isInstitutionalStaff() && isValidDepartmentCase(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isValidId(caseId) && isInstitutionalStaff() && isValidDepartmentCase(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (isSuperAdmin() || isHR() || isDeptSupervisor() || existing().createdBy == request.auth.uid);
+      allow delete: if isValidId(caseId) && isSuperAdmin();
+    }
+
+    // 19. E-Raseed Receipts & Donations
+    match /eraseed_receipts/{receiptId} {
+      allow get: if isValidId(receiptId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.receiptType in ['Receipt', 'Donation', 'Deposit'];
+      allow create: if isValidId(receiptId) && isInstitutionalStaff() && isValidERaseed(incoming()) && validCreateTimestamps(incoming()) && incoming().issuedBy == request.auth.uid && incoming().status == 'active' && exists(/databases/$(database)/documents/branches/$(incoming().branchId));
+      allow update: if isValidId(receiptId) && (isSuperAdmin() || isHR()) && isValidERaseed(incoming()) && validUpdateTimestamp(incoming()) && incoming().issuedBy == existing().issuedBy && incoming().createdAt == existing().createdAt && (isSuperAdmin() || existing().status == 'active');
+      allow delete: if isValidId(receiptId) && isSuperAdmin();
+    }
+
+    // 20. ERP & Finance Ledger
+    match /finance_ledger/{entryId} {
+      allow get: if isValidId(entryId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.entryType in ['account', 'income', 'expense', 'budget', 'fee', 'asset'];
+      allow create: if isValidId(entryId) && (isHR() || isPrincipal() || hasRole('staff')) && isValidFinanceEntry(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/branches/$(incoming().branchId));
+      allow update: if isValidId(entryId) && (isSuperAdmin() || isHR()) && isValidFinanceEntry(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (isSuperAdmin() || existing().status != 'cancelled');
+      allow delete: if isValidId(entryId) && isSuperAdmin();
+    }
+
+    // 21. Notice Board
+    match /notices/{noticeId} {
+      allow get: if isValidId(noticeId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.status in ['published', 'archived'];
+      allow create: if isValidId(noticeId) && (isHR() || isPrincipal() || isTeacher() || isDeptSupervisor()) && isValidNotice(incoming()) && validCreateTimestamps(incoming()) && incoming().publishedBy == request.auth.uid;
+      allow update: if isValidId(noticeId) && isValidNotice(incoming()) && validUpdateTimestamp(incoming()) && incoming().publishedBy == existing().publishedBy && incoming().createdAt == existing().createdAt && (isSuperAdmin() || isHR() || existing().publishedBy == request.auth.uid);
+      allow delete: if isValidId(noticeId) && (isSuperAdmin() || isHR());
+    }
+
+    // 22. Immutable Audit Logs
+    match /audit_logs/{logId} {
+      allow get: if isValidId(logId) && isVerified() && (isHR() || existing().actorUid == request.auth.uid);
+      allow list: if isInstitutionalStaff() && (isHR() || resource.data.actorUid == request.auth.uid);
+      allow create: if isValidId(logId) && isVerified() && isValidAuditLog(incoming());
+      allow update, delete: if false;
+    }
+
+    // 23. System Config
+    match /system_config/{configId} {
+      allow get: if isValidId(configId) && isInstitutionalStaff();
+      allow list: if isInstitutionalStaff() && resource.data.configType in ['master', 'eraseed', 'backup'];
+      allow create, update: if isValidId(configId) && (isSuperAdmin() || isHR()) && isValidSystemConfig(incoming()) && incoming().updatedBy == request.auth.uid;
+      allow delete: if isValidId(configId) && isSuperAdmin();
+    }
+  }
+}
