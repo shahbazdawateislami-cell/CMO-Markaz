@@ -150,32 +150,16 @@ function CMOWorkspace() {
         return <ERPFinanceModule />;
       case 'qadri_40':
         return <AcademicDepartmentModule key={activeModule} programType="qadri40" />;
-      case 'darul_ifta':
-        return <OperationalDepartmentModule key={activeModule} moduleType="darul_ifta" />;
-      case 'darul_qaza':
-        return <OperationalDepartmentModule key={activeModule} moduleType="darul_qaza" />;
-      case 'darul_iqama':
-        return <OperationalDepartmentModule key={activeModule} moduleType="darul_iqama" />;
       case 'madrasas':
         return <AcademicDepartmentModule key={activeModule} programType="madrasa" />;
       case 'online_admission':
         return <OnlineAdmissionModule />;
-      case 'tahreek_bedari':
-        return <OperationalDepartmentModule key={activeModule} moduleType="tahreek_bedari" />;
       case 'e_raseed':
         return <ERaseedModule />;
       case 'hr_payroll':
         return <HRPayrollModule />;
-      case 'digital_library':
-        return <OperationalDepartmentModule key={activeModule} moduleType="digital_library" />;
-      case 'online_courses':
-        return <OperationalDepartmentModule key={activeModule} moduleType="online_courses" />;
       case 'notice_board':
         return <NoticeBoardModule />;
-      case 'projects_existing':
-        return <OperationalDepartmentModule key={activeModule} moduleType="project_existing" />;
-      case 'upcoming_project':
-        return <OperationalDepartmentModule key={activeModule} moduleType="project_upcoming" />;
       case 'reports_analytics':
         return <ReportsAnalyticsModule />;
       case 'hr_control_panel':

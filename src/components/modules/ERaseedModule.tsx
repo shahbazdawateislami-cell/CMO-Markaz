@@ -52,7 +52,7 @@ export function ERaseedModule() {
   const [cfgInstitution, setCfgInstitution] = useState(
     eraseedConfig?.institutionName || 'Markazi CMO'
   );
-  const [cfgCurrency, setCfgCurrency] = useState(eraseedConfig?.defaultCurrency || 'PKR');
+  const [cfgCurrency, setCfgCurrency] = useState(eraseedConfig?.defaultCurrency || 'INR');
 
   const handleIssueReceipt = async (e: React.FormEvent) => {
     e.preventDefault();

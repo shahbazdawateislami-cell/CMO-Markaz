@@ -29,19 +29,11 @@ const MODULE_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   ess: UserCheck,
   erp: Landmark,
   qadri_40: GraduationCap,
-  darul_ifta: BookOpen,
-  darul_qaza: Scale,
-  darul_iqama: Building2,
   madrasas: Layers,
   online_admission: ClipboardCheck,
-  tahreek_bedari: Megaphone,
   e_raseed: Receipt,
   hr_payroll: Users,
-  digital_library: Library,
-  online_courses: FileText,
   notice_board: Megaphone,
-  projects_existing: FolderKanban,
-  upcoming_project: CalendarCheck,
   reports_analytics: TrendingUp,
 };
 
@@ -77,32 +69,16 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
         return financeLedger.length;
       case 'qadri_40':
         return students.filter((s) => s.programType === 'qadri40').length;
-      case 'darul_ifta':
-        return departmentCases.filter((c) => c.moduleType === 'darul_ifta').length;
-      case 'darul_qaza':
-        return departmentCases.filter((c) => c.moduleType === 'darul_qaza').length;
-      case 'darul_iqama':
-        return departmentCases.filter((c) => c.moduleType === 'darul_iqama').length;
       case 'madrasas':
         return students.filter((s) => s.programType === 'madrasa').length;
       case 'online_admission':
         return admissions.length;
-      case 'tahreek_bedari':
-        return departmentCases.filter((c) => c.moduleType === 'tahreek_bedari').length;
       case 'e_raseed':
         return eraseedReceipts.length;
       case 'hr_payroll':
         return employees.length;
-      case 'digital_library':
-        return departmentCases.filter((c) => c.moduleType === 'digital_library').length;
-      case 'online_courses':
-        return departmentCases.filter((c) => c.moduleType === 'online_courses').length;
       case 'notice_board':
         return notices.length;
-      case 'projects_existing':
-        return departmentCases.filter((c) => c.moduleType === 'project_existing').length;
-      case 'upcoming_project':
-        return departmentCases.filter((c) => c.moduleType === 'project_upcoming').length;
       case 'reports_analytics':
         return academics.length + studentAttendance.length;
       default:

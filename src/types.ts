@@ -43,20 +43,12 @@ export const CMO_MODULES: ModuleDefinition[] = [
   { order: 1, key: 'ess', label: 'ESS', description: 'Employee Self Service', category: 'Core' },
   { order: 2, key: 'erp', label: 'ERP', description: 'Enterprise Finance & Accounts', category: 'Finance' },
   { order: 3, key: 'qadri_40', label: 'QADRI 40', description: 'Course, Batch & Student Attendance', category: 'Department' },
-  { order: 4, key: 'darul_ifta', label: 'Darul Ifta', description: 'Fatwa Research & Rulings', category: 'Department' },
-  { order: 5, key: 'darul_qaza', label: 'Dar-ul-Qaza', description: 'Arbitration & Judicial Cases', category: 'Department' },
-  { order: 6, key: 'darul_iqama', label: 'Darul Iqama', description: 'Hostel & Resident Management', category: 'Department' },
-  { order: 7, key: 'madrasas', label: 'Madrasas', description: 'Division, Branch & Class Operations', category: 'Department' },
-  { order: 8, key: 'online_admission', label: 'Online Admission', description: '3-Stage Admission Verification', category: 'Operations' },
-  { order: 9, key: 'tahreek_bedari', label: 'Tahreek-e-Bedari', description: 'Outreach & Dawah Campaigns', category: 'Department' },
-  { order: 10, key: 'e_raseed', label: 'E-Raseed', description: 'Receipts, Donations & Deposits', category: 'Finance' },
-  { order: 11, key: 'hr_payroll', label: 'HR & Payroll', description: 'Employees, Attendance & Salaries', category: 'Core' },
-  { order: 12, key: 'digital_library', label: 'Digital Library', description: 'Catalog & Institutional Books', category: 'Operations' },
-  { order: 13, key: 'online_courses', label: 'Online Courses', description: 'Digital Learning & Schedules', category: 'Operations' },
-  { order: 14, key: 'notice_board', label: 'Notice Board', description: 'Central & Branch Announcements', category: 'Operations' },
-  { order: 15, key: 'projects_existing', label: 'Projects Existing', description: 'Active Institutional Projects', category: 'Operations' },
-  { order: 16, key: 'upcoming_project', label: 'Upcoming Project', description: 'Planned Initiatives & Budgets', category: 'Operations' },
-  { order: 17, key: 'reports_analytics', label: 'Reports & Analytics', description: 'Consolidated Institutional Reports', category: 'Intelligence' },
+  { order: 4, key: 'madrasas', label: 'Madrasas', description: 'Division, Branch & Class Operations', category: 'Department' },
+  { order: 5, key: 'online_admission', label: 'Online Admission', description: '3-Stage Admission Verification', category: 'Operations' },
+  { order: 6, key: 'e_raseed', label: 'E-Raseed', description: 'Receipts, Donations & Deposits', category: 'Finance' },
+  { order: 7, key: 'hr_payroll', label: 'HR & Payroll', description: 'Employees, Attendance & Salaries', category: 'Core' },
+  { order: 8, key: 'notice_board', label: 'Notice Board', description: 'Central & Branch Announcements', category: 'Operations' },
+  { order: 9, key: 'reports_analytics', label: 'Reports & Analytics', description: 'Consolidated Institutional Reports', category: 'Intelligence' },
 ];
 
 export interface UserProfile {
@@ -493,7 +485,7 @@ export function formatCounter(value: number): string {
   return String(safe).padStart(2, '0');
 }
 
-export function formatCurrency(amount: number, currency = 'PKR'): string {
+export function formatCurrency(amount: number, currency = 'INR'): string {
   const safe = Number.isFinite(amount) ? amount : 0;
   return `${currency} ${safe.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
