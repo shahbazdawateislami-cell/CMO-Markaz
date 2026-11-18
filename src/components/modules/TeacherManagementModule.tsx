@@ -19,6 +19,9 @@ type TeacherTab =
 export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }) {
   const {
     firebaseUser,
+    actorUid,
+    actorName,
+    isOpenMode,
     userProfile,
     employees,
     classes,
@@ -60,38 +63,42 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
   const teacherEmp = useMemo(
     () =>
       employees.find((e) => e.uid === firebaseUser?.uid) ||
-      employees.find((e) => e.id === userProfile?.employeeId),
-    [employees, firebaseUser, userProfile]
+      employees.find((e) => e.id === userProfile?.employeeId) ||
+      (isOpenMode ? employees[0] : undefined),
+    [employees, firebaseUser, userProfile, isOpenMode]
   );
 
   const myClasses = useMemo(
     () =>
       classes.filter(
-        (c) => !c.teacherUid || c.teacherUid === firebaseUser?.uid
+        (c) => isOpenMode || !c.teacherUid || c.teacherUid === firebaseUser?.uid
       ),
-    [classes, firebaseUser]
+    [classes, firebaseUser, isOpenMode]
   );
 
   const myTimetables = useMemo(
     () =>
       timetables.filter(
-        (t) => !t.teacherUid || t.teacherUid === firebaseUser?.uid
+        (t) => isOpenMode || !t.teacherUid || t.teacherUid === firebaseUser?.uid
       ),
-    [timetables, firebaseUser]
+    [timetables, firebaseUser, isOpenMode]
   );
 
   const myAttendance = useMemo(
-    () => employeeAttendance.filter((a) => a.uid === firebaseUser?.uid),
-    [employeeAttendance, firebaseUser]
+    () =>
+      isOpenMode
+        ? employeeAttendance
+        : employeeAttendance.filter((a) => a.uid === firebaseUser?.uid),
+    [employeeAttendance, firebaseUser, isOpenMode]
   );
 
   const handleSaveAcademic = async (e: React.FormEvent, forcedType?: 'homework' | 'exam' | 'mark' | 'progress') => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     const type = forcedType || recordType;
     const targetBranch = branchId || teacherEmp?.branchId || branches[0]?.id || '';
     if (!targetBranch) {
-      notify('Select a Branch first.', 'error');
+      notify('Create or select a Branch first.', 'error');
       return;
     }
     const stu = students.find((s) => s.id === studentId);
@@ -113,8 +120,8 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
           ...(obtainedMarks ? { obtainedMarks: Math.max(0, Number(obtainedMarks) || 0) } : {}),
           grade: sanitizeStr(grade, 20),
           remarks: sanitizeStr(remarks, 500),
-          teacherUid: firebaseUser.uid,
-          teacherName: userProfile?.displayName || firebaseUser.email || 'Teacher',
+          teacherUid: actorUid,
+          teacherName: actorName,
         },
         {
           action: `Created Academic ${type}`,
@@ -135,7 +142,7 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
 
   const handleCreateTimetable = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser || !ttClassId) {
+    if (!actorUid || !ttClassId) {
       notify('Select a class for timetable entry.', 'error');
       return;
     }
@@ -149,13 +156,13 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
         {
           classId: cls.id,
           branchId: cls.branchId,
-          teacherUid: firebaseUser.uid,
+          teacherUid: actorUid,
           dayOfWeek: ttDay,
           startTime: ttStart,
           endTime: ttEnd,
           subject: sanitizeStr(ttSubject, 120),
           room: sanitizeStr(ttRoom, 60),
-          createdBy: firebaseUser.uid,
+          createdBy: actorUid,
         },
         {
           action: 'Added Timetable Slot',
@@ -232,10 +239,10 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
           />
           <div className="space-y-2">
             <h3 className="text-lg font-semibold text-slate-900">
-              {teacherEmp?.fullName || userProfile?.displayName}
+              {teacherEmp?.fullName || actorName}
             </h3>
             <p className="text-sm text-slate-600">
-              {teacherEmp?.designation || 'Faculty Member'} · {userProfile?.email}
+              {teacherEmp?.designation || 'Faculty Member'} · {userProfile?.email || teacherEmp?.email || 'Open Workspace'}
             </p>
             <div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-600">
               <span>Employee ID: <strong className="font-mono">{teacherEmp?.employeeCode || 'Unlinked'}</strong></span>
@@ -329,6 +336,27 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-4"
           >
             <h3 className="text-base font-semibold text-slate-900">Add Timetable Slot</h3>
+            {classes.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+                No classes created yet. Add a class in{' '}
+                <button
+                  type="button"
+                  onClick={() => onNavigate('madrasas')}
+                  className="underline font-semibold"
+                >
+                  Madrasas
+                </button>{' '}
+                or{' '}
+                <button
+                  type="button"
+                  onClick={() => onNavigate('qadri_40')}
+                  className="underline font-semibold"
+                >
+                  QADRI 40
+                </button>{' '}
+                first.
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Class</label>
               <select
@@ -474,7 +502,7 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                             onClick={() =>
                               updateRecord('admissions', adm.id, {
                                 workflowStatus: 'teacher_verified',
-                                teacherVerifiedBy: firebaseUser?.uid,
+                                teacherVerifiedBy: actorUid,
                                 teacherVerifiedAt: new Date().toISOString(),
                               })
                             }
@@ -486,7 +514,7 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                             onClick={() =>
                               updateRecord('admissions', adm.id, {
                                 workflowStatus: 'rejected',
-                                teacherVerifiedBy: firebaseUser?.uid,
+                                teacherVerifiedBy: actorUid,
                                 teacherVerifiedAt: new Date().toISOString(),
                               })
                             }
@@ -528,6 +556,20 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                   ? 'Record Student Progress'
                   : 'Create Exam / Enter Marks & Results'}
             </h3>
+
+            {branches.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+                No branches created yet. Create a branch in{' '}
+                <button
+                  type="button"
+                  onClick={() => onNavigate('super_admin_panel')}
+                  className="underline font-semibold"
+                >
+                  Super Admin Control
+                </button>{' '}
+                first.
+              </div>
+            )}
 
             {tab === 'exams_marks' && (
               <div>

@@ -15,6 +15,7 @@ type AdminTab =
 export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }) {
   const {
     firebaseUser,
+    actorUid,
     divisions,
     branches,
     departments,
@@ -77,93 +78,133 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
 
   const handleCreateDivision = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
+    const cleanName = sanitizeStr(divName, 120);
+    const cleanCode = sanitizeStr(divCode, 40);
+    if (!cleanName || !cleanCode) {
+      notify('Enter both Division Name and Code.', 'error');
+      return;
+    }
     const id = makeSafeId('div');
-    await createRecord(
-      'divisions',
-      id,
-      {
-        name: sanitizeStr(divName, 120),
-        code: sanitizeStr(divCode, 40),
-        status: 'active',
-        createdBy: firebaseUser.uid,
-      },
-      { action: 'Created Division', module: 'Super Admin', details: divName }
-    );
-    setDivName('');
-    setDivCode('');
-    notify('Division created.', 'success');
+    try {
+      await createRecord(
+        'divisions',
+        id,
+        {
+          name: cleanName,
+          code: cleanCode,
+          status: 'active',
+          createdBy: actorUid,
+        },
+        { action: 'Created Division', module: 'Super Admin', details: cleanName }
+      );
+      setDivName('');
+      setDivCode('');
+      notify('Division created.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to create division.', 'error');
+    }
   };
 
   const handleCreateBranch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
+    const cleanName = sanitizeStr(brName, 120);
+    const cleanCode = sanitizeStr(brCode, 40);
+    const cleanCity = sanitizeStr(brCity, 100);
+    const cleanInst = sanitizeStr(brInst, 120) || 'Markazi CMO';
+    if (!cleanName || !cleanCode || !cleanCity) {
+      notify('Enter Branch Name, Code, and City.', 'error');
+      return;
+    }
     const id = makeSafeId('br');
-    await createRecord(
-      'branches',
-      id,
-      {
-        name: sanitizeStr(brName, 120),
-        code: sanitizeStr(brCode, 40),
-        divisionId: brDivId || '',
-        institutionName: sanitizeStr(brInst, 120),
-        city: sanitizeStr(brCity, 100),
-        status: 'active',
-        createdBy: firebaseUser.uid,
-      },
-      { action: 'Created Branch', module: 'Super Admin', details: `${brName} (${brCity})` }
-    );
-    setBrName('');
-    setBrCode('');
-    setBrCity('');
-    notify('Branch created.', 'success');
+    try {
+      await createRecord(
+        'branches',
+        id,
+        {
+          name: cleanName,
+          code: cleanCode,
+          divisionId: brDivId || '',
+          institutionName: cleanInst,
+          city: cleanCity,
+          status: 'active',
+          createdBy: actorUid,
+        },
+        { action: 'Created Branch', module: 'Super Admin', details: `${cleanName} (${cleanCity})` }
+      );
+      setBrName('');
+      setBrCode('');
+      setBrCity('');
+      notify('Branch created.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to create branch.', 'error');
+    }
   };
 
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
+    const cleanName = sanitizeStr(deptName, 120);
+    if (!cleanName) {
+      notify('Enter Department Name.', 'error');
+      return;
+    }
     const id = makeSafeId('dept');
-    await createRecord(
-      'departments',
-      id,
-      {
-        name: sanitizeStr(deptName, 120),
-        slug: deptType,
-        type: deptType,
-        status: 'active',
-        permissions: ['read', 'write', 'report'],
-        createdBy: firebaseUser.uid,
-      },
-      { action: 'Created Department', module: 'Super Admin', details: `${deptName} (${deptType})` }
-    );
-    setDeptName('');
-    notify('Department created and connected to central CMO.', 'success');
+    try {
+      await createRecord(
+        'departments',
+        id,
+        {
+          name: cleanName,
+          slug: deptType,
+          type: deptType,
+          status: 'active',
+          permissions: ['read', 'write', 'report'],
+          createdBy: actorUid,
+        },
+        { action: 'Created Department', module: 'Super Admin', details: `${cleanName} (${deptType})` }
+      );
+      setDeptName('');
+      notify('Department created and connected to central CMO.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to create department.', 'error');
+    }
   };
 
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
+    const cleanName = sanitizeStr(sessName, 100);
+    if (!cleanName) {
+      notify('Enter Academic Session Name.', 'error');
+      return;
+    }
     const id = makeSafeId('sess');
-    await createRecord(
-      'academic_sessions',
-      id,
-      {
-        name: sanitizeStr(sessName, 100),
-        startDate: sessStart,
-        endDate: sessEnd,
-        isCurrent: true,
-        status: 'active',
-        createdBy: firebaseUser.uid,
-      },
-      { action: 'Created Academic Session', module: 'Super Admin', details: sessName }
-    );
-    setSessName('');
-    notify('Academic Session created.', 'success');
+    try {
+      await createRecord(
+        'academic_sessions',
+        id,
+        {
+          name: cleanName,
+          startDate: sessStart,
+          endDate: sessEnd,
+          isCurrent: true,
+          status: 'active',
+          createdBy: actorUid,
+        },
+        { action: 'Created Academic Session', module: 'Super Admin', details: cleanName }
+      );
+      setSessName('');
+      notify('Academic Session created.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to create session.', 'error');
+    }
   };
 
   const handleSaveTimingPolicy = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     const resolvedScopeId = scopeType === 'global' ? 'global' : scopeId;
     if (!resolvedScopeId) {
       notify('Select a Branch, Department, or Employee target.', 'error');
@@ -179,83 +220,99 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
             : employees.find((emp) => emp.id === resolvedScopeId)?.fullName || resolvedScopeId;
 
     const id = makeSafeId('tim');
-    await createRecord(
-      'attendance_timings',
-      id,
-      {
-        scopeType,
-        scopeId: resolvedScopeId,
-        scopeLabel: label,
-        startTime,
-        lateTime,
-        closingTime,
-        graceMinutes: Math.max(0, Number(graceMinutes) || 0),
-        isLocked: false,
-        updatedBy: firebaseUser.uid,
-      },
-      {
-        action: 'Configured Attendance Timing',
-        module: 'Super Admin',
-        details: `${label}: ${startTime}–${closingTime} (Late ${lateTime}, Grace ${graceMinutes}m)`,
-      }
-    );
-    notify(`Timing policy saved for ${label}.`, 'success');
+    try {
+      await createRecord(
+        'attendance_timings',
+        id,
+        {
+          scopeType,
+          scopeId: resolvedScopeId,
+          scopeLabel: label,
+          startTime,
+          lateTime,
+          closingTime,
+          graceMinutes: Math.max(0, Number(graceMinutes) || 0),
+          isLocked: false,
+          updatedBy: actorUid,
+        },
+        {
+          action: 'Configured Attendance Timing',
+          module: 'Super Admin',
+          details: `${label}: ${startTime}–${closingTime} (Late ${lateTime}, Grace ${graceMinutes}m)`,
+        }
+      );
+      notify(`Timing policy saved for ${label}.`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to save timing policy.', 'error');
+    }
   };
 
   const handleReopenAttendancePolicy = async (timingId: string) => {
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     const reopenEnd = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    await updateRecord(
-      'attendance_timings',
-      timingId,
-      {
-        isLocked: false,
-        reopenedUntil: reopenEnd,
-        updatedBy: firebaseUser.uid,
-      },
-      {
-        action: 'Super Admin Reopened Locked Attendance',
-        module: 'Super Admin',
-        details: `Reopened policy ${timingId} for 2 hours`,
-      }
-    );
-    notify('Attendance window reopened for 2 hours.', 'success');
+    try {
+      await updateRecord(
+        'attendance_timings',
+        timingId,
+        {
+          isLocked: false,
+          reopenedUntil: reopenEnd,
+          updatedBy: actorUid,
+        },
+        {
+          action: 'Super Admin Reopened Locked Attendance',
+          module: 'Super Admin',
+          details: `Reopened policy ${timingId} for 2 hours`,
+        }
+      );
+      notify('Attendance window reopened for 2 hours.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to reopen policy.', 'error');
+    }
   };
 
   const handleToggleLockPolicy = async (timingId: string, locked: boolean) => {
-    if (!firebaseUser) return;
-    await updateRecord(
-      'attendance_timings',
-      timingId,
-      {
-        isLocked: locked,
-        reopenedUntil: '',
-        updatedBy: firebaseUser.uid,
-      },
-      {
-        action: locked ? 'Locked Attendance Policy' : 'Unlocked Attendance Policy',
-        module: 'Super Admin',
-        details: `Policy ${timingId} isLocked=${locked}`,
-      }
-    );
-    notify(`Policy ${locked ? 'locked' : 'unlocked'}.`, 'success');
+    if (!actorUid) return;
+    try {
+      await updateRecord(
+        'attendance_timings',
+        timingId,
+        {
+          isLocked: locked,
+          reopenedUntil: '',
+          updatedBy: actorUid,
+        },
+        {
+          action: locked ? 'Locked Attendance Policy' : 'Unlocked Attendance Policy',
+          module: 'Super Admin',
+          details: `Policy ${timingId} isLocked=${locked}`,
+        }
+      );
+      notify(`Policy ${locked ? 'locked' : 'unlocked'}.`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to update lock.', 'error');
+    }
   };
 
   const handleReopenAttendanceRecord = async (recordId: string) => {
-    await updateRecord(
-      'employee_attendance',
-      recordId,
-      {
-        isLocked: false,
-        reopenedByAdmin: true,
-      },
-      {
-        action: 'Super Admin Reopened Attendance Record',
-        module: 'Super Admin',
-        details: `Reopened employee attendance ${recordId}`,
-      }
-    );
-    notify('Employee attendance record reopened.', 'success');
+    try {
+      await updateRecord(
+        'employee_attendance',
+        recordId,
+        {
+          isLocked: false,
+          reopenedByAdmin: true,
+        },
+        {
+          action: 'Super Admin Reopened Attendance Record',
+          module: 'Super Admin',
+          details: `Reopened employee attendance ${recordId}`,
+        }
+      );
+      notify('Employee attendance record reopened.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to reopen record.', 'error');
+    }
   };
 
   const handleFullBackup = () => {

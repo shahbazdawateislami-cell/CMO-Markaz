@@ -7,8 +7,8 @@ import { CounterStat, EmptyState, SectionHeader, StatusTag } from '../SharedUI';
 
 export function NoticeBoardModule() {
   const {
-    firebaseUser,
-    userProfile,
+    actorUid,
+    actorName,
     branches,
     departments,
     notices,
@@ -33,7 +33,7 @@ export function NoticeBoardModule() {
 
   const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser || !canPublish) return;
+    if (!actorUid || !canPublish) return;
     const id = makeSafeId('not');
     try {
       await createRecord(
@@ -46,8 +46,8 @@ export function NoticeBoardModule() {
           branchId: branchId || '',
           departmentId: departmentId || '',
           priority,
-          publishedBy: firebaseUser.uid,
-          publishedByName: userProfile?.displayName || firebaseUser.email || 'Admin',
+          publishedBy: actorUid,
+          publishedByName: actorName,
           status: 'published',
         },
         {

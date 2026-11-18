@@ -17,7 +17,7 @@ type HRTab =
 
 export function HRPayrollModule() {
   const {
-    firebaseUser,
+    actorUid,
     branches,
     departments,
     employees,
@@ -79,7 +79,7 @@ export function HRPayrollModule() {
 
   const handleRegisterEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser || !isHR) {
+    if (!actorUid || !isHR) {
       notify('Only HR or Super Admin can register employees.', 'error');
       return;
     }
@@ -110,7 +110,7 @@ export function HRPayrollModule() {
           photoUrl: photoUrl || '',
           documents,
           achievements: [],
-          createdBy: firebaseUser.uid,
+          createdBy: actorUid,
         },
         {
           action: 'Registered Employee',
@@ -138,7 +138,7 @@ export function HRPayrollModule() {
 
   // Principal approves or rejects employee/teacher attendance
   const handleAttendanceDecision = async (rec: EmployeeAttendance, approve: boolean) => {
-    if (!firebaseUser || !(isPrincipal || isSuperAdmin)) {
+    if (!actorUid || !(isPrincipal || isSuperAdmin)) {
       notify('Only Principal or Super Admin can approve/reject teacher attendance.', 'error');
       return;
     }
@@ -148,7 +148,7 @@ export function HRPayrollModule() {
         rec.id,
         {
           approvalStatus: approve ? 'approved' : 'rejected',
-          approvedBy: firebaseUser.uid,
+          approvedBy: actorUid,
           approvedAt: new Date().toISOString(),
           ...(approve ? {} : { rejectionReason: 'Rejected by Principal review' }),
           ...(rec.correctionRequested
@@ -174,7 +174,7 @@ export function HRPayrollModule() {
 
   // Generate Payroll from Principal-Approved Attendance ONLY
   const handleGeneratePayroll = async () => {
-    if (!firebaseUser || !isHR) return;
+    if (!actorUid || !isHR) return;
     if (employees.length === 0) {
       notify('No employees registered to generate payroll.', 'info');
       return;
@@ -226,7 +226,7 @@ export function HRPayrollModule() {
           absentDays,
           netPayable: net,
           status: 'processed',
-          generatedBy: firebaseUser.uid,
+          generatedBy: actorUid,
         },
         {
           action: 'Generated Monthly Payroll',
@@ -472,6 +472,15 @@ export function HRPayrollModule() {
               />
             </div>
           </div>
+
+          {(branches.length === 0 || departments.length === 0) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+              Setup required first: create at least one{' '}
+              <span className="font-semibold">Branch</span> and{' '}
+              <span className="font-semibold">Department</span> in{' '}
+              <span className="font-semibold">Super Admin Control</span> before saving employees.
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
@@ -849,7 +858,7 @@ export function HRPayrollModule() {
                               onClick={() =>
                                 updateRecord('leave_requests', l.id, {
                                   status: 'approved',
-                                  reviewedBy: firebaseUser?.uid,
+                                  reviewedBy: actorUid,
                                   reviewedAt: new Date().toISOString(),
                                 })
                               }
@@ -861,7 +870,7 @@ export function HRPayrollModule() {
                               onClick={() =>
                                 updateRecord('leave_requests', l.id, {
                                   status: 'rejected',
-                                  reviewedBy: firebaseUser?.uid,
+                                  reviewedBy: actorUid,
                                   reviewedAt: new Date().toISOString(),
                                 })
                               }
@@ -919,7 +928,7 @@ export function HRPayrollModule() {
                               onClick={() =>
                                 updateRecord('expense_claims', c.id, {
                                   status: 'approved',
-                                  reviewedBy: firebaseUser?.uid,
+                                  reviewedBy: actorUid,
                                 })
                               }
                               className="px-2.5 py-1 text-xs font-medium text-white bg-emerald-800 rounded-md"
@@ -930,7 +939,7 @@ export function HRPayrollModule() {
                               onClick={() =>
                                 updateRecord('expense_claims', c.id, {
                                   status: 'rejected',
-                                  reviewedBy: firebaseUser?.uid,
+                                  reviewedBy: actorUid,
                                 })
                               }
                               className="px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-md"

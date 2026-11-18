@@ -13,7 +13,7 @@ export function AcademicDepartmentModule({
   programType: 'madrasa' | 'qadri40';
 }) {
   const {
-    firebaseUser,
+    actorUid,
     divisions,
     branches,
     departments,
@@ -22,6 +22,7 @@ export function AcademicDepartmentModule({
     students,
     studentAttendance,
     users,
+    employees,
     isHR,
     isPrincipal,
     isSuperAdmin,
@@ -75,7 +76,7 @@ export function AcademicDepartmentModule({
 
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser || !(isHR || isPrincipal || isSuperAdmin)) {
+    if (!actorUid || !(isHR || isPrincipal || isSuperAdmin)) {
       notify('HR, Principal, or Super Admin required to create academic classes.', 'error');
       return;
     }
@@ -99,7 +100,7 @@ export function AcademicDepartmentModule({
           sessionId,
           teacherUid: teacherUid || '',
           status: 'active',
-          createdBy: firebaseUser.uid,
+          createdBy: actorUid,
         },
         {
           action: `Created ${deptTitle} Class`,
@@ -214,6 +215,14 @@ export function AcademicDepartmentModule({
             <h3 className="text-base font-semibold text-slate-900">
               {programType === 'madrasa' ? 'Create Madrasa Class / Section' : 'Create QADRI 40 Course / Batch / Class'}
             </h3>
+
+            {(branches.length === 0 || sessions.length === 0) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+                Setup required first: create a <span className="font-semibold">Branch</span> and{' '}
+                <span className="font-semibold">Academic Session</span> in{' '}
+                <span className="font-semibold">Super Admin Control</span> first.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -330,6 +339,13 @@ export function AcademicDepartmentModule({
                   .map((u) => (
                     <option key={u.uid} value={u.uid}>
                       {u.displayName} ({u.role})
+                    </option>
+                  ))}
+                {employees
+                  .filter((emp) => !users.some((u) => u.uid === emp.uid || u.employeeId === emp.id))
+                  .map((emp) => (
+                    <option key={emp.id} value={emp.uid || emp.id}>
+                      {emp.fullName} ({emp.designation || emp.employeeCode})
                     </option>
                   ))}
               </select>

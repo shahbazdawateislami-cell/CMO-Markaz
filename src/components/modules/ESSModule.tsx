@@ -61,6 +61,8 @@ const ESS_BUTTONS: {
 export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }) {
   const {
     firebaseUser,
+    actorUid,
+    isOpenMode,
     userProfile,
     employees,
     branches,
@@ -82,37 +84,62 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
   } = useCMO();
 
   const [activeTab, setActiveTab] = useState<ESSTab>('attendance');
+  const [selectedOpenEmployeeId, setSelectedOpenEmployeeId] = useState('');
 
-  // Identify current user's Employee record
+  // Identify current user's Employee record (or selected employee in Open Mode)
   const myEmployee = useMemo(() => {
+    if (isOpenMode) {
+      return (
+        employees.find((e) => e.id === selectedOpenEmployeeId) ||
+        employees[0]
+      );
+    }
     if (!firebaseUser) return undefined;
     return (
       employees.find((e) => e.uid === firebaseUser.uid) ||
       employees.find((e) => e.id === userProfile?.employeeId) ||
       employees.find((e) => e.email.toLowerCase() === (firebaseUser.email || '').toLowerCase())
     );
-  }, [employees, firebaseUser, userProfile]);
+  }, [employees, firebaseUser, userProfile, isOpenMode, selectedOpenEmployeeId]);
 
   const myAttendance = useMemo(() => {
+    if (isOpenMode) {
+      if (!myEmployee) return [];
+      return employeeAttendance
+        .filter((a) => a.employeeId === myEmployee.id)
+        .sort((a, b) => b.date.localeCompare(a.date));
+    }
     if (!firebaseUser) return [];
     return employeeAttendance
       .filter((a) => a.uid === firebaseUser.uid)
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [employeeAttendance, firebaseUser]);
+  }, [employeeAttendance, firebaseUser, isOpenMode, myEmployee]);
 
   const myLeaves = useMemo(() => {
+    if (isOpenMode) {
+      if (!myEmployee) return [];
+      return leaveRequests
+        .filter((l) => l.employeeId === myEmployee.id)
+        .sort((a, b) => b.startDate.localeCompare(a.startDate));
+    }
     if (!firebaseUser) return [];
     return leaveRequests
       .filter((l) => l.uid === firebaseUser.uid)
       .sort((a, b) => b.startDate.localeCompare(a.startDate));
-  }, [leaveRequests, firebaseUser]);
+  }, [leaveRequests, firebaseUser, isOpenMode, myEmployee]);
 
   const myClaims = useMemo(() => {
+    if (isOpenMode) {
+      if (!myEmployee) return [];
+      return expenseClaims
+        .filter((c) => c.employeeId === myEmployee.id)
+        .sort((a, b) => b.claimDate.localeCompare(a.claimDate));
+    }
     if (!firebaseUser) return [];
     return expenseClaims
       .filter((c) => c.uid === firebaseUser.uid)
       .sort((a, b) => b.claimDate.localeCompare(a.claimDate));
-  }, [expenseClaims, firebaseUser]);
+  }, [expenseClaims, firebaseUser, isOpenMode, myEmployee]);
 
   const myPayrolls = useMemo(() => {
     if (!myEmployee) return [];
@@ -187,8 +214,8 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
   const [selectedPayslipId, setSelectedPayslipId] = useState<string>('');
 
   const handleMarkManualAttendance = async () => {
-    if (!firebaseUser || !myEmployee) {
-      notify('Your user account is not yet linked to an active HR Employee profile.', 'error');
+    if (!actorUid || !myEmployee) {
+      notify('Register an Employee in HR & Payroll first to mark ESS attendance.', 'error');
       return;
     }
     if (todayRecord) {
@@ -222,7 +249,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
         id,
         {
           employeeId: myEmployee.id,
-          uid: firebaseUser.uid,
+          uid: myEmployee.uid || actorUid,
           employeeName: myEmployee.fullName,
           branchId: myEmployee.branchId,
           departmentId: myEmployee.departmentId,
@@ -276,7 +303,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
 
   const handleLeaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser || !myEmployee) {
+    if (!actorUid || !myEmployee) {
       notify('Employee profile required before submitting leave.', 'error');
       return;
     }
@@ -288,7 +315,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
         id,
         {
           employeeId: myEmployee.id,
-          uid: firebaseUser.uid,
+          uid: myEmployee.uid || actorUid,
           employeeName: myEmployee.fullName,
           branchId: myEmployee.branchId,
           departmentId: myEmployee.departmentId,
@@ -313,7 +340,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
 
   const handleClaimSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser || !myEmployee) {
+    if (!actorUid || !myEmployee) {
       notify('Employee profile required before submitting claims.', 'error');
       return;
     }
@@ -329,7 +356,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
         id,
         {
           employeeId: myEmployee.id,
-          uid: firebaseUser.uid,
+          uid: myEmployee.uid || actorUid,
           employeeName: myEmployee.fullName,
           claimType,
           amount: amt,
@@ -352,14 +379,14 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
   };
 
   const handleTeacherVerifyAdmission = async (admId: string, approve: boolean) => {
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     try {
       await updateRecord(
         'admissions',
         admId,
         {
           workflowStatus: approve ? 'teacher_verified' : 'rejected',
-          teacherVerifiedBy: firebaseUser.uid,
+          teacherVerifiedBy: actorUid,
           teacherVerifiedAt: new Date().toISOString(),
           ...(approve ? {} : { rejectionReason: 'Rejected during Teacher verification stage' }),
         },
@@ -419,9 +446,38 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
         })}
       </div>
 
+      {isOpenMode && employees.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs font-medium text-slate-600">
+            Active Employee in ESS Open Workspace:
+          </div>
+          <select
+            value={myEmployee?.id || ''}
+            onChange={(e) => setSelectedOpenEmployeeId(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white"
+          >
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.employeeCode} – {emp.fullName} ({emp.designation})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {!myEmployee && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-          Your account is not yet linked to an Employee record in HR &amp; Payroll. Ask HR or Super Admin to register your Employee ID with email <span className="font-mono">{firebaseUser?.email}</span> to enable personal attendance, leave, and payroll linking.
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-sm text-amber-900">
+          <span>
+            {isOpenMode
+              ? 'No Employees registered yet. Register an Employee in HR & Payroll first to enable ESS attendance, leave, and payroll actions.'
+              : `Your account is not yet linked to an Employee record in HR & Payroll. Ask HR or Super Admin to register your Employee ID with email ${firebaseUser?.email || ''}.`}
+          </span>
+          <button
+            onClick={() => onNavigate('hr_payroll')}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg whitespace-nowrap"
+          >
+            Open HR &amp; Payroll
+          </button>
         </div>
       )}
 

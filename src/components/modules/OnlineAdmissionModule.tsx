@@ -7,7 +7,7 @@ import { AvatarFrame, CounterStat, EmptyState, SectionHeader, StatusTag } from '
 
 export function OnlineAdmissionModule() {
   const {
-    firebaseUser,
+    actorUid,
     branches,
     divisions,
     departments,
@@ -59,7 +59,7 @@ export function OnlineAdmissionModule() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     if (!branchId || !sessionId) {
       notify('Select a Branch and Academic Session before submitting.', 'error');
       return;
@@ -86,7 +86,7 @@ export function OnlineAdmissionModule() {
           photoUrl: photoUrl || '',
           notes: sanitizeStr(notes, 500),
           workflowStatus: 'pending_teacher',
-          submittedBy: firebaseUser.uid,
+          submittedBy: actorUid,
         },
         {
           action: 'Submitted Online Admission',
@@ -107,14 +107,14 @@ export function OnlineAdmissionModule() {
   };
 
   const handleTeacherStage = async (adm: Admission, approve: boolean) => {
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     try {
       await updateRecord(
         'admissions',
         adm.id,
         {
           workflowStatus: approve ? 'teacher_verified' : 'rejected',
-          teacherVerifiedBy: firebaseUser.uid,
+          teacherVerifiedBy: actorUid,
           teacherVerifiedAt: new Date().toISOString(),
           ...(approve ? {} : { rejectionReason: 'Rejected at Teacher verification stage' }),
         },
@@ -131,14 +131,14 @@ export function OnlineAdmissionModule() {
   };
 
   const handleHRStage = async (adm: Admission, approve: boolean) => {
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     try {
       await updateRecord(
         'admissions',
         adm.id,
         {
           workflowStatus: approve ? 'hr_verified' : 'rejected',
-          hrVerifiedBy: firebaseUser.uid,
+          hrVerifiedBy: actorUid,
           hrVerifiedAt: new Date().toISOString(),
           ...(approve ? {} : { rejectionReason: 'Rejected at HR verification stage' }),
         },
@@ -182,14 +182,14 @@ export function OnlineAdmissionModule() {
   };
 
   const handleSuperAdminReject = async (adm: Admission) => {
-    if (!firebaseUser || !isSuperAdmin) return;
+    if (!actorUid || !isSuperAdmin) return;
     try {
       await updateRecord(
         'admissions',
         adm.id,
         {
           workflowStatus: 'rejected',
-          superAdminApprovedBy: firebaseUser.uid,
+          superAdminApprovedBy: actorUid,
           superAdminApprovedAt: new Date().toISOString(),
           rejectionReason: 'Rejected by Super Admin',
         },
@@ -236,6 +236,15 @@ export function OnlineAdmissionModule() {
             <UserPlus className="w-4 h-4 text-emerald-800" />
             <h3 className="text-base font-semibold text-slate-900">New Admission Application</h3>
           </div>
+
+          {(branches.length === 0 || sessions.length === 0) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+              Setup required first: create at least one{' '}
+              <span className="font-semibold">Branch</span> and{' '}
+              <span className="font-semibold">Academic Session</span> in{' '}
+              <span className="font-semibold">Super Admin Control</span> before submitting admissions.
+            </div>
+          )}
 
           <div className="pt-1">
             <label className="block text-xs font-medium text-slate-600 mb-2">

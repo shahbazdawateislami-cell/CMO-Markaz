@@ -45,6 +45,7 @@ const HR_CONTROL_ITEMS: { id: HRControlArea; label: string }[] = [
 export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => void }) {
   const {
     firebaseUser,
+    actorUid,
     users,
     branches,
     departments,
@@ -124,11 +125,11 @@ export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => v
     a.click();
     URL.revokeObjectURL(url);
 
-    if (firebaseUser) {
+    if (actorUid) {
       await createRecord('system_config', 'backup_meta', {
         configType: 'backup',
         lastBackupAt: new Date().toISOString(),
-        updatedBy: firebaseUser.uid,
+        updatedBy: actorUid,
       });
     }
     notify('Institutional JSON backup downloaded.', 'success');
@@ -446,14 +447,18 @@ export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => v
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            if (!firebaseUser) return;
-            await createRecord('system_config', 'master_config', {
-              configType: 'master',
-              institutionName: sanitizeStr(institutionName, 120),
-              academicYear: sanitizeStr(academicYear, 40),
-              updatedBy: firebaseUser.uid,
-            });
-            notify('Master system configuration updated.', 'success');
+            if (!actorUid) return;
+            try {
+              await createRecord('system_config', 'master_config', {
+                configType: 'master',
+                institutionName: sanitizeStr(institutionName, 120),
+                academicYear: sanitizeStr(academicYear, 40),
+                updatedBy: actorUid,
+              });
+              notify('Master system configuration updated.', 'success');
+            } catch (err) {
+              notify(err instanceof Error ? err.message : 'Failed to save configuration.', 'error');
+            }
           }}
           className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 max-w-xl"
         >

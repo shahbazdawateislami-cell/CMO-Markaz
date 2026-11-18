@@ -27,8 +27,8 @@ export function StudentAttendanceWorkspace({
   programType: 'madrasa' | 'qadri40';
 }) {
   const {
-    firebaseUser,
-    userProfile,
+    actorUid,
+    actorName,
     divisions,
     branches,
     classes,
@@ -122,7 +122,7 @@ export function StudentAttendanceWorkspace({
     student: Student,
     status: 'Present' | 'Absent' | 'Leave' | 'Sick'
   ) => {
-    if (!firebaseUser || !canMark) {
+    if (!actorUid || !canMark) {
       notify('You do not have permission to mark student attendance.', 'error');
       return;
     }
@@ -144,7 +144,7 @@ export function StudentAttendanceWorkspace({
             status,
             approvalStatus: canApprove ? 'approved' : 'pending_supervisor',
             ...(canApprove
-              ? { approvedBy: firebaseUser.uid, approvedAt: new Date().toISOString() }
+              ? { approvedBy: actorUid, approvedAt: new Date().toISOString() }
               : {}),
           },
           {
@@ -170,11 +170,11 @@ export function StudentAttendanceWorkspace({
             date: markDate,
             monthKey,
             status,
-            markedBy: firebaseUser.uid,
-            markedByName: userProfile?.displayName || firebaseUser.email || 'Teacher',
+            markedBy: actorUid,
+            markedByName: actorName,
             approvalStatus: canApprove ? 'approved' : 'pending_supervisor',
             ...(canApprove
-              ? { approvedBy: firebaseUser.uid, approvedAt: new Date().toISOString() }
+              ? { approvedBy: actorUid, approvedAt: new Date().toISOString() }
               : {}),
           },
           {
@@ -191,14 +191,14 @@ export function StudentAttendanceWorkspace({
   };
 
   const handleSupervisorApprove = async (rec: StudentAttendance, approve: boolean) => {
-    if (!firebaseUser || !canApprove) return;
+    if (!actorUid || !canApprove) return;
     try {
       await updateRecord(
         'student_attendance',
         rec.id,
         {
           approvalStatus: approve ? 'approved' : 'rejected',
-          approvedBy: firebaseUser.uid,
+          approvedBy: actorUid,
           approvedAt: new Date().toISOString(),
         },
         {

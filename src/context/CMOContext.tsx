@@ -58,6 +58,8 @@ import { makeSafeId } from '../utils/validation';
 // Toggle to true whenever the Sign-In lock screen should be re-enabled
 export const AUTH_LOCK_ENABLED = false;
 
+const OPEN_STORAGE_PREFIX = 'markazi_cmo_open_v1_';
+
 interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'info';
@@ -69,6 +71,9 @@ interface CMOContextValue {
   userProfile: UserProfile | null;
   authReady: boolean;
   loadingData: boolean;
+  isOpenMode: boolean;
+  actorUid: string;
+  actorName: string;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 
@@ -153,6 +158,57 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): Record<strin
     }
   }
   return out;
+}
+
+function readOpenCollection<T>(colName: string): T[] {
+  try {
+    const raw = localStorage.getItem(`${OPEN_STORAGE_PREFIX}${colName}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOpenCollection<T>(colName: string, items: T[]): void {
+  try {
+    localStorage.setItem(`${OPEN_STORAGE_PREFIX}${colName}`, JSON.stringify(items));
+  } catch {
+    // Ignore storage quota errors gracefully
+  }
+}
+
+function fileToCompactDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read image file.'));
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        reject(new Error('Invalid image file.'));
+        return;
+      }
+      const img = new Image();
+      img.onerror = () => resolve(result);
+      img.onload = () => {
+        const maxDim = 320;
+        const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(result);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export function CMOProvider({ children }: { children: React.ReactNode }) {
@@ -268,20 +324,34 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const isOpenMode = !firebaseUser && !AUTH_LOCK_ENABLED;
+
   const isBootstrappedOwner =
     Boolean(firebaseUser?.emailVerified) &&
     firebaseUser?.email === BOOTSTRAPPED_SUPER_ADMIN_EMAIL;
 
-  const effectiveRole = isBootstrappedOwner
+  const effectiveRole = isOpenMode
     ? 'super_admin'
-    : userProfile?.role || 'pending';
+    : isBootstrappedOwner
+      ? 'super_admin'
+      : userProfile?.role || 'pending';
 
-  const isSuperAdmin = effectiveRole === 'super_admin' && (isBootstrappedOwner || userProfile?.status === 'active');
-  const isHR = isSuperAdmin || (effectiveRole === 'hr' && userProfile?.status === 'active');
-  const isPrincipal = isSuperAdmin || (effectiveRole === 'principal' && userProfile?.status === 'active');
-  const isTeacher = effectiveRole === 'teacher' && userProfile?.status === 'active';
-  const isDeptSupervisor = effectiveRole === 'department_supervisor' && userProfile?.status === 'active';
+  const isSuperAdmin =
+    isOpenMode ||
+    (effectiveRole === 'super_admin' && (isBootstrappedOwner || userProfile?.status === 'active'));
+  const isHR =
+    isOpenMode || isSuperAdmin || (effectiveRole === 'hr' && userProfile?.status === 'active');
+  const isPrincipal =
+    isOpenMode ||
+    isSuperAdmin ||
+    (effectiveRole === 'principal' && userProfile?.status === 'active');
+  const isTeacher =
+    isOpenMode || (effectiveRole === 'teacher' && userProfile?.status === 'active');
+  const isDeptSupervisor =
+    isOpenMode ||
+    (effectiveRole === 'department_supervisor' && userProfile?.status === 'active');
   const isActiveStaff =
+    isOpenMode ||
     isSuperAdmin ||
     (Boolean(userProfile) &&
       userProfile?.status === 'active' &&
@@ -289,8 +359,98 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         userProfile.role
       ));
 
-  // 2. Real-time Firestore Subscriptions (Strictly gated on authReady & active staff role)
+  const actorUid = firebaseUser?.uid || (isOpenMode ? 'open_admin' : '');
+  const actorName =
+    userProfile?.displayName ||
+    firebaseUser?.email ||
+    (isOpenMode ? 'Super Admin (Open Workspace)' : 'Staff');
+
+  const getOpenSetter = useCallback(
+    (colName: string): React.Dispatch<React.SetStateAction<any[]>> | null => {
+      switch (colName) {
+        case 'users':
+          return setUsers;
+        case 'divisions':
+          return setDivisions;
+        case 'branches':
+          return setBranches;
+        case 'departments':
+          return setDepartments;
+        case 'academic_sessions':
+          return setSessions;
+        case 'classes':
+          return setClasses;
+        case 'timetables':
+          return setTimetables;
+        case 'employees':
+          return setEmployees;
+        case 'attendance_timings':
+          return setAttendanceTimings;
+        case 'employee_attendance':
+          return setEmployeeAttendance;
+        case 'leave_requests':
+          return setLeaveRequests;
+        case 'payroll_records':
+          return setPayrollRecords;
+        case 'expense_claims':
+          return setExpenseClaims;
+        case 'admissions':
+          return setAdmissions;
+        case 'students':
+          return setStudents;
+        case 'student_attendance':
+          return setStudentAttendance;
+        case 'academics':
+          return setAcademics;
+        case 'department_cases':
+          return setDepartmentCases;
+        case 'eraseed_receipts':
+          return setEraseedReceipts;
+        case 'finance_ledger':
+          return setFinanceLedger;
+        case 'notices':
+          return setNotices;
+        case 'audit_logs':
+          return setAuditLogs;
+        case 'system_config':
+          return setSystemConfigs;
+        default:
+          return null;
+      }
+    },
+    []
+  );
+
+  // 2. Real-time Firestore Subscriptions OR Open-Mode Local Persistence
   useEffect(() => {
+    if (isOpenMode) {
+      setUsers(readOpenCollection<UserProfile>('users'));
+      setDivisions(readOpenCollection<Division>('divisions'));
+      setBranches(readOpenCollection<Branch>('branches'));
+      setDepartments(readOpenCollection<Department>('departments'));
+      setSessions(readOpenCollection<AcademicSession>('academic_sessions'));
+      setClasses(readOpenCollection<AcademicClass>('classes'));
+      setTimetables(readOpenCollection<TimetableEntry>('timetables'));
+      setEmployees(readOpenCollection<Employee>('employees'));
+      setAttendanceTimings(readOpenCollection<AttendanceTiming>('attendance_timings'));
+      setEmployeeAttendance(readOpenCollection<EmployeeAttendance>('employee_attendance'));
+      setLeaveRequests(readOpenCollection<LeaveRequest>('leave_requests'));
+      setPayrollRecords(readOpenCollection<PayrollRecord>('payroll_records'));
+      setExpenseClaims(readOpenCollection<ExpenseClaim>('expense_claims'));
+      setAdmissions(readOpenCollection<Admission>('admissions'));
+      setStudents(readOpenCollection<Student>('students'));
+      setStudentAttendance(readOpenCollection<StudentAttendance>('student_attendance'));
+      setAcademics(readOpenCollection<AcademicRecord>('academics'));
+      setDepartmentCases(readOpenCollection<DepartmentCase>('department_cases'));
+      setEraseedReceipts(readOpenCollection<ERaseedReceipt>('eraseed_receipts'));
+      setFinanceLedger(readOpenCollection<FinanceEntry>('finance_ledger'));
+      setNotices(readOpenCollection<Notice>('notices'));
+      setAuditLogs(readOpenCollection<AuditLog>('audit_logs'));
+      setSystemConfigs(readOpenCollection<SystemConfig>('system_config'));
+      setLoadingData(false);
+      return;
+    }
+
     if (!authReady || !firebaseUser || !isActiveStaff) {
       setUsers([]);
       setDivisions([]);
@@ -443,7 +603,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [authReady, firebaseUser, isActiveStaff, isHR, isPrincipal, userProfile?.employeeId]);
+  }, [authReady, firebaseUser, isOpenMode, isActiveStaff, isHR, isPrincipal, userProfile?.employeeId]);
 
   const logAudit = useCallback(
     async (
@@ -453,8 +613,28 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       entityId: string,
       details: string
     ) => {
-      if (!firebaseUser) return;
       const logId = makeSafeId('log');
+      if (isOpenMode) {
+        const entry: AuditLog = {
+          id: logId,
+          action: action.slice(0, 120),
+          module: module.slice(0, 80),
+          entityType: entityType.slice(0, 80),
+          entityId: entityId.slice(0, 128),
+          actorUid: 'open_admin',
+          actorEmail: 'open-workspace@markazi-cmo.local',
+          actorRole: 'super_admin',
+          details: details.slice(0, 1000),
+          createdAt: new Date().toISOString(),
+        };
+        setAuditLogs((prev) => {
+          const next = [entry, ...prev].slice(0, 300);
+          writeOpenCollection('audit_logs', next);
+          return next;
+        });
+        return;
+      }
+      if (!firebaseUser) return;
       const path = `audit_logs/${logId}`;
       try {
         await setDoc(doc(db, 'audit_logs', logId), {
@@ -472,7 +652,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.CREATE, path);
       }
     },
-    [firebaseUser, effectiveRole]
+    [firebaseUser, isOpenMode, effectiveRole]
   );
 
   const createRecord = useCallback(
@@ -482,16 +662,36 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       payload: T,
       auditMeta?: { action: string; module: string; details: string }
     ) => {
-      if (!firebaseUser) {
-        notify('Click Sign In in the top bar to save records to Firebase.', 'info');
+      const clean = stripUndefined(payload);
+      if (isOpenMode) {
+        const setter = getOpenSetter(collectionName);
+        if (!setter) throw new Error(`Unknown collection: ${collectionName}`);
+        const nowIso = new Date().toISOString();
+        const record = {
+          id,
+          ...clean,
+          ...(collectionName === 'system_config' ? {} : { createdAt: nowIso }),
+          updatedAt: nowIso,
+        };
+        setter((prev) => {
+          const filtered = prev.filter((item) => item.id !== id);
+          const next = [...filtered, record];
+          writeOpenCollection(collectionName, next);
+          return next;
+        });
+        if (auditMeta) {
+          await logAudit(auditMeta.action, auditMeta.module, collectionName, id, auditMeta.details);
+        }
         return;
       }
-      const clean = stripUndefined(payload);
+      if (!firebaseUser) {
+        throw new Error('Click Sign In in the top bar to save records to Firebase.');
+      }
       const path = `${collectionName}/${id}`;
       try {
         await setDoc(doc(db, collectionName, id), {
           ...clean,
-          createdAt: serverTimestamp(),
+          ...(collectionName === 'system_config' ? {} : { createdAt: serverTimestamp() }),
           updatedAt: serverTimestamp(),
         });
         if (auditMeta) {
@@ -501,7 +701,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.CREATE, path);
       }
     },
-    [firebaseUser, logAudit, notify]
+    [firebaseUser, isOpenMode, getOpenSetter, logAudit]
   );
 
   const updateRecord = useCallback(
@@ -511,11 +711,26 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       payload: Record<string, unknown>,
       auditMeta?: { action: string; module: string; details: string }
     ) => {
-      if (!firebaseUser) {
-        notify('Click Sign In in the top bar to save updates to Firebase.', 'info');
+      const clean = stripUndefined(payload);
+      if (isOpenMode) {
+        const setter = getOpenSetter(collectionName);
+        if (!setter) throw new Error(`Unknown collection: ${collectionName}`);
+        const nowIso = new Date().toISOString();
+        setter((prev) => {
+          const next = prev.map((item) =>
+            item.id === id ? { ...item, ...clean, updatedAt: nowIso } : item
+          );
+          writeOpenCollection(collectionName, next);
+          return next;
+        });
+        if (auditMeta) {
+          await logAudit(auditMeta.action, auditMeta.module, collectionName, id, auditMeta.details);
+        }
         return;
       }
-      const clean = stripUndefined(payload);
+      if (!firebaseUser) {
+        throw new Error('Click Sign In in the top bar to update records in Firebase.');
+      }
       const path = `${collectionName}/${id}`;
       try {
         await updateDoc(doc(db, collectionName, id), {
@@ -529,7 +744,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.UPDATE, path);
       }
     },
-    [firebaseUser, logAudit, notify]
+    [firebaseUser, isOpenMode, getOpenSetter, logAudit]
   );
 
   const deleteRecord = useCallback(
@@ -538,9 +753,21 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       id: string,
       auditMeta?: { action: string; module: string; details: string }
     ) => {
-      if (!firebaseUser) {
-        notify('Click Sign In in the top bar to manage records in Firebase.', 'info');
+      if (isOpenMode) {
+        const setter = getOpenSetter(collectionName);
+        if (!setter) throw new Error(`Unknown collection: ${collectionName}`);
+        setter((prev) => {
+          const next = prev.filter((item) => item.id !== id);
+          writeOpenCollection(collectionName, next);
+          return next;
+        });
+        if (auditMeta) {
+          await logAudit(auditMeta.action, auditMeta.module, collectionName, id, auditMeta.details);
+        }
         return;
+      }
+      if (!firebaseUser) {
+        throw new Error('Click Sign In in the top bar to delete records in Firebase.');
       }
       const path = `${collectionName}/${id}`;
       try {
@@ -552,11 +779,72 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.DELETE, path);
       }
     },
-    [firebaseUser, logAudit, notify]
+    [firebaseUser, isOpenMode, getOpenSetter, logAudit]
   );
 
   const approveAdmissionFinal = useCallback(
     async (admission: Admission, selectedClass: AcademicClass, rollNo: string) => {
+      const studentId = makeSafeId('stu');
+      const nowIso = new Date().toISOString();
+
+      if (isOpenMode) {
+        setAdmissions((prev) => {
+          const next = prev.map((a) =>
+            a.id === admission.id
+              ? {
+                  ...a,
+                  workflowStatus: 'active' as const,
+                  classId: selectedClass.id,
+                  superAdminApprovedBy: 'open_admin',
+                  superAdminApprovedAt: nowIso,
+                  updatedAt: nowIso,
+                }
+              : a
+          );
+          writeOpenCollection('admissions', next);
+          return next;
+        });
+
+        const newStudent: Student = {
+          id: studentId,
+          admissionId: admission.id,
+          rollNo: rollNo.trim().slice(0, 40),
+          studentName: admission.studentName,
+          fatherName: admission.fatherName,
+          guardianPhone: admission.guardianPhone,
+          programType: admission.programType,
+          divisionId: admission.divisionId || selectedClass.divisionId || '',
+          branchId: admission.branchId,
+          departmentId: admission.departmentId || '',
+          classId: selectedClass.id,
+          courseName: selectedClass.courseName || '',
+          batchName: selectedClass.batchName || '',
+          className: selectedClass.className,
+          sectionName: selectedClass.sectionName || '',
+          sessionId: admission.sessionId,
+          photoUrl: admission.photoUrl || '',
+          status: 'active',
+          createdBy: 'open_admin',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+
+        setStudents((prev) => {
+          const next = [...prev, newStudent];
+          writeOpenCollection('students', next);
+          return next;
+        });
+
+        await logAudit(
+          'Super Admin Approved Admission',
+          'Online Admission',
+          'admissions',
+          admission.id,
+          `Activated admission ${admission.applicationNo} for ${admission.studentName} (Roll ${rollNo})`
+        );
+        return;
+      }
+
       if (!firebaseUser) {
         throw new Error('Click Sign In in the top bar to approve admissions in Firebase.');
       }
@@ -565,14 +853,13 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
       }
       const batch = writeBatch(db);
       const admRef = doc(db, 'admissions', admission.id);
-      const studentId = makeSafeId('stu');
       const stuRef = doc(db, 'students', studentId);
 
       batch.update(admRef, {
         workflowStatus: 'active',
         classId: selectedClass.id,
         superAdminApprovedBy: firebaseUser.uid,
-        superAdminApprovedAt: new Date().toISOString(),
+        superAdminApprovedAt: nowIso,
         updatedAt: serverTimestamp(),
       });
 
@@ -614,24 +901,30 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         handleFirestoreError(err, OperationType.WRITE, `admissions/${admission.id}`);
       }
     },
-    [firebaseUser, isSuperAdmin, logAudit]
+    [firebaseUser, isOpenMode, isSuperAdmin, logAudit]
   );
 
-  const uploadPhoto = useCallback(async (file: File, folder: string): Promise<string> => {
-    if (!firebaseUser) {
-      throw new Error('Click Sign In in the top bar to upload photos to Firebase.');
-    }
-    if (!file.type.startsWith('image/')) {
-      throw new Error('Only image files are permitted for profile photos.');
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      throw new Error('Photo file size must be 2 MB or smaller.');
-    }
-    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageRef = ref(storage, `markazi_cmo/${folder}/${Date.now()}_${cleanName}`);
-    await uploadBytes(storageRef, file);
-    return getDownloadURL(storageRef);
-  }, [firebaseUser]);
+  const uploadPhoto = useCallback(
+    async (file: File, folder: string): Promise<string> => {
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Only image files are permitted for profile photos.');
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        throw new Error('Photo file size must be 2 MB or smaller.');
+      }
+      if (isOpenMode) {
+        return fileToCompactDataUrl(file);
+      }
+      if (!firebaseUser) {
+        throw new Error('Click Sign In in the top bar to upload photos to Firebase.');
+      }
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storageRef = ref(storage, `markazi_cmo/${folder}/${Date.now()}_${cleanName}`);
+      await uploadBytes(storageRef, file);
+      return getDownloadURL(storageRef);
+    },
+    [firebaseUser, isOpenMode]
+  );
 
   return (
     <CMOContext.Provider
@@ -640,6 +933,9 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         userProfile,
         authReady,
         loadingData,
+        isOpenMode,
+        actorUid,
+        actorName,
         signInWithGoogle,
         signOut,
         isSuperAdmin,

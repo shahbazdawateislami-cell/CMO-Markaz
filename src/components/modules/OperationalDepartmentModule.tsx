@@ -90,7 +90,7 @@ const MODULE_META: Record<DepartmentCaseModule, ModuleMeta> = {
 
 export function OperationalDepartmentModule({ moduleType }: { moduleType: DepartmentCaseModule }) {
   const {
-    firebaseUser,
+    actorUid,
     branches,
     departments,
     users,
@@ -130,7 +130,7 @@ export function OperationalDepartmentModule({ moduleType }: { moduleType: Depart
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     const id = makeSafeId(meta.codePrefix.toLowerCase());
     const refCode = `${meta.codePrefix}-${String(records.length + 1).padStart(4, '0')}`;
     try {
@@ -148,7 +148,7 @@ export function OperationalDepartmentModule({ moduleType }: { moduleType: Depart
           status,
           targetDate,
           ...(meta.showBudget ? { budgetAmount: Math.max(0, Number(budgetAmount) || 0) } : {}),
-          createdBy: firebaseUser.uid,
+          createdBy: actorUid,
         },
         {
           action: `Created ${meta.title} Record`,
@@ -434,7 +434,7 @@ export function OperationalDepartmentModule({ moduleType }: { moduleType: Depart
                             </td>
                           )}
                           <td className="py-2.5 px-4">
-                            {isHR || isSuperAdmin || isDeptSupervisor || r.createdBy === firebaseUser?.uid ? (
+                            {isHR || isSuperAdmin || isDeptSupervisor || r.createdBy === actorUid ? (
                               <select
                                 value={r.status}
                                 onChange={(e) => handleStatusChange(r, e.target.value)}

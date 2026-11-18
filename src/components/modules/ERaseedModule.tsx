@@ -15,7 +15,7 @@ type ERaseedTab =
 
 export function ERaseedModule() {
   const {
-    firebaseUser,
+    actorUid,
     branches,
     eraseedReceipts,
     systemConfigs,
@@ -56,7 +56,7 @@ export function ERaseedModule() {
 
   const handleIssueReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     const amt = Number(amount);
     if (!branchId || !Number.isFinite(amt) || amt <= 0) {
       notify('Select a branch and enter a valid positive amount.', 'error');
@@ -85,7 +85,7 @@ export function ERaseedModule() {
           receiptDate,
           monthKey: receiptDate.slice(0, 7),
           status: 'active',
-          issuedBy: firebaseUser.uid,
+          issuedBy: actorUid,
         },
         {
           action: 'Issued E-Raseed Receipt',
@@ -124,14 +124,14 @@ export function ERaseedModule() {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser) return;
+    if (!actorUid) return;
     try {
       await createRecord('system_config', 'eraseed_default', {
         configType: 'eraseed',
         institutionName: sanitizeStr(cfgInstitution, 120),
         receiptPrefix: sanitizeStr(cfgPrefix, 20),
         defaultCurrency: sanitizeStr(cfgCurrency, 12),
-        updatedBy: firebaseUser.uid,
+        updatedBy: actorUid,
       });
       notify('E-Raseed settings saved.', 'success');
     } catch (err) {
@@ -248,6 +248,14 @@ export function ERaseedModule() {
             <Receipt className="w-4 h-4 text-emerald-800" />
             <h3 className="text-base font-semibold text-slate-900">Issue New E-Raseed</h3>
           </div>
+
+          {branches.length === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+              Setup required first: create at least one{' '}
+              <span className="font-semibold">Branch</span> in{' '}
+              <span className="font-semibold">Super Admin Control</span> before issuing receipts.
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>

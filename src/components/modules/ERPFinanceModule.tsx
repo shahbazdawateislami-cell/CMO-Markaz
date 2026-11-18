@@ -17,7 +17,7 @@ type ERPTab =
 
 export function ERPFinanceModule() {
   const {
-    firebaseUser,
+    actorUid,
     branches,
     departments,
     financeLedger,
@@ -47,7 +47,7 @@ export function ERPFinanceModule() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseUser || !canWrite) return;
+    if (!actorUid || !canWrite) return;
     if (!branchId) {
       notify('Select a branch.', 'error');
       return;
@@ -70,7 +70,7 @@ export function ERPFinanceModule() {
           entryDate,
           status: 'posted',
           notes: sanitizeStr(notes, 500),
-          createdBy: firebaseUser.uid,
+          createdBy: actorUid,
         },
         {
           action: `Posted ERP ${entryType}`,
@@ -281,6 +281,14 @@ export function ERPFinanceModule() {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
               />
             </div>
+
+            {branches.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+                Setup required first: create at least one{' '}
+                <span className="font-semibold">Branch</span> in{' '}
+                <span className="font-semibold">Super Admin Control</span> before posting entries.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
