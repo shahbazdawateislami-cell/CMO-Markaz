@@ -20,6 +20,7 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
     branches,
     departments,
     sessions,
+    classes,
     employees,
     admissions,
     attendanceTimings,
@@ -58,6 +59,14 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
   const [sessName, setSessName] = useState('');
   const [sessStart, setSessStart] = useState('2026-04-01');
   const [sessEnd, setSessEnd] = useState('2027-03-31');
+
+  // Class form in Super Admin
+  const [clsProgram, setClsProgram] = useState<'madrasa' | 'qadri40'>('madrasa');
+  const [clsBranchId, setClsBranchId] = useState('');
+  const [clsSessionId, setClsSessionId] = useState('');
+  const [clsDivId, setClsDivId] = useState('');
+  const [clsName, setClsName] = useState('');
+  const [clsSection, setClsSection] = useState('');
 
   // Attendance Timing Policy form (Branch, Department, Employee-wise)
   const [scopeType, setScopeType] = useState<'global' | 'branch' | 'department' | 'employee'>('global');
@@ -199,6 +208,39 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
       notify('Academic Session created.', 'success');
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Failed to create session.', 'error');
+    }
+  };
+
+  const handleCreateClassAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actorUid) return;
+    const cleanClassName = sanitizeStr(clsName, 120);
+    if (!cleanClassName || !clsBranchId || !clsSessionId) {
+      notify('Enter Class Name, Branch, and Academic Session.', 'error');
+      return;
+    }
+    const id = makeSafeId('cls');
+    try {
+      await createRecord(
+        'classes',
+        id,
+        {
+          programType: clsProgram,
+          branchId: clsBranchId,
+          sessionId: clsSessionId,
+          divisionId: clsDivId || '',
+          className: cleanClassName,
+          sectionName: sanitizeStr(clsSection, 60),
+          status: 'active',
+          createdBy: actorUid,
+        },
+        { action: 'Created Class in Super Admin', module: 'Super Admin', details: cleanClassName }
+      );
+      setClsName('');
+      setClsSection('');
+      notify('Class created successfully.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to create class.', 'error');
     }
   };
 
@@ -471,6 +513,62 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
                   <div key={s.id} className="flex justify-between py-1">
                     <span className="font-medium">{s.name}</span>
                     <span className="font-mono text-slate-500">{s.startDate} to {s.endDate}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </form>
+
+          {/* Classes & Sections */}
+          <form onSubmit={handleCreateClassAdmin} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 lg:col-span-2">
+            <h3 className="text-sm font-semibold text-slate-900">5. Institutional Classes &amp; Sections</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Program</label>
+                <select value={clsProgram} onChange={(e) => setClsProgram(e.target.value as any)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
+                  <option value="madrasa">Madrasa</option>
+                  <option value="qadri40">QADRI 40</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Branch</label>
+                <select required value={clsBranchId} onChange={(e) => setClsBranchId(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
+                  <option value="">Select Branch</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Academic Session</label>
+                <select required value={clsSessionId} onChange={(e) => setClsSessionId(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
+                  <option value="">Select Session</option>
+                  {sessions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Division (Optional)</label>
+                <select value={clsDivId} onChange={(e) => setClsDivId(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
+                  <option value="">Optional Division</option>
+                  {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Class Name</label>
+                <input type="text" required placeholder="e.g. Darja Oola / Class A" value={clsName} onChange={(e) => setClsName(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Section (Optional)</label>
+                <input type="text" placeholder="e.g. Section A" value={clsSection} onChange={(e) => setClsSection(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg" />
+              </div>
+            </div>
+            <button type="submit" className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-800 rounded-lg">Add Class / Section</button>
+            {classes.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+                {classes.map((c) => (
+                  <div key={c.id} className="flex justify-between py-1">
+                    <span className="font-medium">{c.className} {c.sectionName ? `(${c.sectionName})` : ''} · <span className="uppercase text-slate-500">{c.programType}</span></span>
+                    <span className="font-mono text-slate-500">{branches.find((b) => b.id === c.branchId)?.name || 'Branch'}</span>
                   </div>
                 ))}
               </div>
