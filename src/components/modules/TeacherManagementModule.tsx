@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useCMO } from '../../context/CMOContext';
-import { formatCounter, ModuleKey } from '../../types';
+import { Admission, formatCounter, ModuleKey } from '../../types';
 import { getTodayStr, makeSafeId, sanitizeStr } from '../../utils/validation';
 import { AvatarFrame, CounterStat, EmptyState, SectionHeader, StatusTag } from '../SharedUI';
 
@@ -23,6 +24,10 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
     actorName,
     isOpenMode,
     userProfile,
+    staffSessionEmployee,
+    isStaffSessionActive,
+    isSuperAdmin,
+    isHR,
     employees,
     classes,
     timetables,
@@ -34,6 +39,7 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
     branches,
     createRecord,
     updateRecord,
+    deleteRecord,
     notify,
   } = useCMO();
 
@@ -62,35 +68,44 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
 
   const teacherEmp = useMemo(
     () =>
+      (isStaffSessionActive && staffSessionEmployee ? staffSessionEmployee : undefined) ||
       employees.find((e) => e.uid === firebaseUser?.uid) ||
       employees.find((e) => e.id === userProfile?.employeeId) ||
-      (isOpenMode ? employees[0] : undefined),
-    [employees, firebaseUser, userProfile, isOpenMode]
+      (isOpenMode && !isStaffSessionActive ? employees[0] : undefined),
+    [isStaffSessionActive, staffSessionEmployee, employees, firebaseUser, userProfile, isOpenMode]
   );
 
   const myClasses = useMemo(
     () =>
       classes.filter(
-        (c) => isOpenMode || !c.teacherUid || c.teacherUid === firebaseUser?.uid
+        (c) =>
+          (isOpenMode && !isStaffSessionActive) ||
+          !c.teacherUid ||
+          c.teacherUid === firebaseUser?.uid ||
+          (teacherEmp && (c.teacherUid === teacherEmp.id || c.teacherUid === teacherEmp.uid))
       ),
-    [classes, firebaseUser, isOpenMode]
+    [classes, firebaseUser, isOpenMode, isStaffSessionActive, teacherEmp]
   );
 
   const myTimetables = useMemo(
     () =>
       timetables.filter(
-        (t) => isOpenMode || !t.teacherUid || t.teacherUid === firebaseUser?.uid
+        (t) =>
+          (isOpenMode && !isStaffSessionActive) ||
+          !t.teacherUid ||
+          t.teacherUid === firebaseUser?.uid ||
+          (teacherEmp && (t.teacherUid === teacherEmp.id || t.teacherUid === teacherEmp.uid))
       ),
-    [timetables, firebaseUser, isOpenMode]
+    [timetables, firebaseUser, isOpenMode, isStaffSessionActive, teacherEmp]
   );
 
-  const myAttendance = useMemo(
-    () =>
-      isOpenMode
-        ? employeeAttendance
-        : employeeAttendance.filter((a) => a.uid === firebaseUser?.uid),
-    [employeeAttendance, firebaseUser, isOpenMode]
-  );
+  const myAttendance = useMemo(() => {
+    if (isStaffSessionActive && teacherEmp) {
+      return employeeAttendance.filter((a) => a.employeeId === teacherEmp.id);
+    }
+    if (isOpenMode) return employeeAttendance;
+    return employeeAttendance.filter((a) => a.uid === firebaseUser?.uid);
+  }, [employeeAttendance, firebaseUser, isOpenMode, isStaffSessionActive, teacherEmp]);
 
   const handleSaveAcademic = async (e: React.FormEvent, forcedType?: 'homework' | 'exam' | 'mark' | 'progress') => {
     e.preventDefault();
@@ -175,6 +190,55 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
       notify('Timetable slot added.', 'success');
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Failed to add timetable slot.', 'error');
+    }
+  };
+
+  const handleTeacherAdmissionDecision = async (adm: Admission, approve: boolean) => {
+    try {
+      await updateRecord(
+        'admissions',
+        adm.id,
+        {
+          workflowStatus: approve ? 'teacher_verified' : 'rejected',
+          teacherVerifiedBy: actorUid,
+          teacherVerifiedAt: new Date().toISOString(),
+          ...(approve ? {} : { rejectionReason: 'Rejected at Teacher verification stage' }),
+        },
+        {
+          action: approve ? 'Teacher Verified Admission' : 'Teacher Rejected Admission',
+          module: 'Teacher Management',
+          details: `${adm.applicationNo} (${adm.studentName})`,
+        }
+      );
+      notify(approve ? 'Forwarded to HR Verification.' : 'Application rejected.', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Admission update failed.', 'error');
+    }
+  };
+
+  const handleDeleteTimetable = async (id: string) => {
+    try {
+      await deleteRecord('timetables', id, {
+        action: 'Deleted Timetable Slot',
+        module: 'Teacher Management',
+        details: `Deleted slot ${id}`,
+      });
+      notify('Timetable slot removed.', 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Delete failed.', 'error');
+    }
+  };
+
+  const handleDeleteAcademic = async (id: string) => {
+    try {
+      await deleteRecord('academics', id, {
+        action: 'Deleted Academic Record',
+        module: 'Teacher Management',
+        details: `Deleted academic record ${id}`,
+      });
+      notify('Academic record removed.', 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Delete failed.', 'error');
     }
   };
 
@@ -423,6 +487,7 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                       <th className="py-2.5 px-4">Subject</th>
                       <th className="py-2.5 px-4">Class</th>
                       <th className="py-2.5 px-4">Room</th>
+                      <th className="py-2.5 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-sm">
@@ -433,6 +498,17 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                         <td className="py-2.5 px-4">{t.subject}</td>
                         <td className="py-2.5 px-4 text-xs text-slate-600">{classes.find((c) => c.id === t.classId)?.className || t.classId}</td>
                         <td className="py-2.5 px-4 text-xs font-mono">{t.room || '-'}</td>
+                        <td className="py-2.5 px-4 text-right">
+                          {(isSuperAdmin || isHR || t.createdBy === actorUid || t.teacherUid === actorUid) && (
+                            <button
+                              onClick={() => handleDeleteTimetable(t.id)}
+                              className="p-1 text-red-700 hover:bg-red-50 rounded"
+                              aria-label="Delete slot"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -499,25 +575,13 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                         <td className="py-2.5 px-4 text-xs uppercase">{adm.programType}</td>
                         <td className="py-2.5 px-4 text-right space-x-2">
                           <button
-                            onClick={() =>
-                              updateRecord('admissions', adm.id, {
-                                workflowStatus: 'teacher_verified',
-                                teacherVerifiedBy: actorUid,
-                                teacherVerifiedAt: new Date().toISOString(),
-                              })
-                            }
+                            onClick={() => handleTeacherAdmissionDecision(adm, true)}
                             className="px-3 py-1 text-xs font-medium text-white bg-emerald-800 rounded-md"
                           >
                             Verify &amp; Forward to HR
                           </button>
                           <button
-                            onClick={() =>
-                              updateRecord('admissions', adm.id, {
-                                workflowStatus: 'rejected',
-                                teacherVerifiedBy: actorUid,
-                                teacherVerifiedAt: new Date().toISOString(),
-                              })
-                            }
+                            onClick={() => handleTeacherAdmissionDecision(adm, false)}
                             className="px-3 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-md"
                           >
                             Reject
@@ -559,15 +623,22 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
 
             {branches.length === 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
-                No branches created yet. Create a branch in{' '}
-                <button
-                  type="button"
-                  onClick={() => onNavigate('super_admin_panel')}
-                  className="underline font-semibold"
-                >
-                  Super Admin Control
-                </button>{' '}
-                first.
+                No branches created yet.{' '}
+                {isSuperAdmin ? (
+                  <>
+                    Create a branch in{' '}
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('super_admin_panel')}
+                      className="underline font-semibold"
+                    >
+                      Super Admin Control
+                    </button>{' '}
+                    first.
+                  </>
+                ) : (
+                  'Ask Super Admin to configure a branch first.'
+                )}
               </div>
             )}
 
@@ -694,6 +765,7 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                       <th className="py-2.5 px-4">Student</th>
                       <th className="py-2.5 px-4 text-right">Score / Grade</th>
                       <th className="py-2.5 px-4">Date</th>
+                      <th className="py-2.5 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-sm">
@@ -721,6 +793,17 @@ export function TeacherManagementModule({ onNavigate }: { onNavigate: (m: Module
                                 : '-'}
                           </td>
                           <td className="py-2.5 px-4 font-mono text-xs text-slate-500">{a.dueDate || '-'}</td>
+                          <td className="py-2.5 px-4 text-right">
+                            {(isSuperAdmin || isHR || a.teacherUid === actorUid) && (
+                              <button
+                                onClick={() => handleDeleteAcademic(a.id)}
+                                className="p-1 text-red-700 hover:bg-red-50 rounded"
+                                aria-label="Delete academic record"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                   </tbody>

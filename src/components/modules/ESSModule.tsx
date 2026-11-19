@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Award,
   BookOpenCheck,
@@ -64,6 +64,9 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
     actorUid,
     isOpenMode,
     userProfile,
+    staffSessionEmployee,
+    isStaffSessionActive,
+    hasModuleAccess,
     employees,
     branches,
     departments,
@@ -75,6 +78,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
     admissions,
     notices,
     academics,
+    isHR,
     isTeacher,
     isPrincipal,
     isSuperAdmin,
@@ -85,9 +89,20 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
 
   const [activeTab, setActiveTab] = useState<ESSTab>('attendance');
   const [selectedOpenEmployeeId, setSelectedOpenEmployeeId] = useState('');
+  const [liveTime, setLiveTime] = useState(getCurrentTimeStr());
 
-  // Identify current user's Employee record (or selected employee in Open Mode)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveTime(getCurrentTimeStr());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Identify current user's Employee record: Staff Session takes strict priority!
   const myEmployee = useMemo(() => {
+    if (isStaffSessionActive && staffSessionEmployee) {
+      return staffSessionEmployee;
+    }
     if (isOpenMode) {
       return (
         employees.find((e) => e.id === selectedOpenEmployeeId) ||
@@ -100,10 +115,10 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
       employees.find((e) => e.id === userProfile?.employeeId) ||
       employees.find((e) => e.email.toLowerCase() === (firebaseUser.email || '').toLowerCase())
     );
-  }, [employees, firebaseUser, userProfile, isOpenMode, selectedOpenEmployeeId]);
+  }, [isStaffSessionActive, staffSessionEmployee, employees, firebaseUser, userProfile, isOpenMode, selectedOpenEmployeeId]);
 
   const myAttendance = useMemo(() => {
-    if (isOpenMode) {
+    if (isStaffSessionActive || isOpenMode) {
       if (!myEmployee) return [];
       return employeeAttendance
         .filter((a) => a.employeeId === myEmployee.id)
@@ -111,12 +126,12 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
     }
     if (!firebaseUser) return [];
     return employeeAttendance
-      .filter((a) => a.uid === firebaseUser.uid)
+      .filter((a) => a.uid === firebaseUser.uid || (myEmployee && a.employeeId === myEmployee.id))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [employeeAttendance, firebaseUser, isOpenMode, myEmployee]);
+  }, [employeeAttendance, firebaseUser, isOpenMode, isStaffSessionActive, myEmployee]);
 
   const myLeaves = useMemo(() => {
-    if (isOpenMode) {
+    if (isStaffSessionActive || isOpenMode) {
       if (!myEmployee) return [];
       return leaveRequests
         .filter((l) => l.employeeId === myEmployee.id)
@@ -124,12 +139,12 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
     }
     if (!firebaseUser) return [];
     return leaveRequests
-      .filter((l) => l.uid === firebaseUser.uid)
+      .filter((l) => l.uid === firebaseUser.uid || (myEmployee && l.employeeId === myEmployee.id))
       .sort((a, b) => b.startDate.localeCompare(a.startDate));
-  }, [leaveRequests, firebaseUser, isOpenMode, myEmployee]);
+  }, [leaveRequests, firebaseUser, isOpenMode, isStaffSessionActive, myEmployee]);
 
   const myClaims = useMemo(() => {
-    if (isOpenMode) {
+    if (isStaffSessionActive || isOpenMode) {
       if (!myEmployee) return [];
       return expenseClaims
         .filter((c) => c.employeeId === myEmployee.id)
@@ -137,9 +152,9 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
     }
     if (!firebaseUser) return [];
     return expenseClaims
-      .filter((c) => c.uid === firebaseUser.uid)
+      .filter((c) => c.uid === firebaseUser.uid || (myEmployee && c.employeeId === myEmployee.id))
       .sort((a, b) => b.claimDate.localeCompare(a.claimDate));
-  }, [expenseClaims, firebaseUser, isOpenMode, myEmployee]);
+  }, [expenseClaims, firebaseUser, isOpenMode, isStaffSessionActive, myEmployee]);
 
   const myPayrolls = useMemo(() => {
     if (!myEmployee) return [];
@@ -170,8 +185,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
     if (!effectivePolicy) {
       return { isClosed: false, reason: 'No timing policy restriction set; manual mark open.' };
     }
-    const nowTime = getCurrentTimeStr();
-    const nowMin = timeToMinutes(nowTime);
+    const nowMin = timeToMinutes(liveTime);
     const closeMin = timeToMinutes(effectivePolicy.closingTime);
     const reopenedActive =
       effectivePolicy.reopenedUntil && new Date(effectivePolicy.reopenedUntil) > new Date();
@@ -192,7 +206,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
       isClosed: false,
       reason: `Open (${effectivePolicy.startTime} – ${effectivePolicy.closingTime} · Late after ${effectivePolicy.lateTime} + ${effectivePolicy.graceMinutes}m grace).`,
     };
-  }, [effectivePolicy]);
+  }, [effectivePolicy, liveTime]);
 
   // Leave form state
   const [leaveType, setLeaveType] = useState<'Casual' | 'Sick' | 'Earned' | 'Emergency' | 'Unpaid'>('Casual');
@@ -446,7 +460,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
         })}
       </div>
 
-      {isOpenMode && employees.length > 0 && (
+      {!isStaffSessionActive && isOpenMode && employees.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs font-medium text-slate-600">
             Active Employee in ESS Open Workspace:
@@ -472,12 +486,14 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
               ? 'No Employees registered yet. Register an Employee in HR & Payroll first to enable ESS attendance, leave, and payroll actions.'
               : `Your account is not yet linked to an Employee record in HR & Payroll. Ask HR or Super Admin to register your Employee ID with email ${firebaseUser?.email || ''}.`}
           </span>
-          <button
-            onClick={() => onNavigate('hr_payroll')}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg whitespace-nowrap"
-          >
-            Open HR &amp; Payroll
-          </button>
+          {(isHR || isSuperAdmin) && (
+            <button
+              onClick={() => onNavigate('hr_payroll')}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg whitespace-nowrap"
+            >
+              Open HR &amp; Payroll
+            </button>
+          )}
         </div>
       )}
 
@@ -492,7 +508,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
                     Manual Attendance Check-In
                   </h3>
                   <span className="text-xs font-mono tabular-nums text-slate-500">
-                    {today} · {getCurrentTimeStr()}
+                    {today} · {liveTime}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
@@ -1057,7 +1073,7 @@ export function ESSModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }
             <div className="text-sm text-slate-600">
               Scheduled institutional exams and assessments assigned to teachers.
             </div>
-            {(isTeacher || isPrincipal || isSuperAdmin) && (
+            {(isTeacher || isPrincipal || isSuperAdmin) && hasModuleAccess('teacher_management') && (
               <button
                 onClick={() => onNavigate('teacher_management')}
                 className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg whitespace-nowrap"

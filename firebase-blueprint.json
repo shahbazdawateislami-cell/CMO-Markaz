@@ -154,6 +154,11 @@
         "photoUrl": { "type": "string", "maxLength": 500 },
         "documents": { "type": "array" },
         "achievements": { "type": "array" },
+        "staffRole": { "type": "string", "enum": ["teacher", "staff", "principal", "department_supervisor", "hr"] },
+        "loginId": { "type": "string", "maxLength": 60 },
+        "passwordHash": { "type": "string", "maxLength": 128 },
+        "passwordProtected": { "type": "boolean" },
+        "moduleAccess": { "type": "object" },
         "createdBy": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -506,6 +511,7 @@
         "defaultCurrency": { "type": "string", "maxLength": 12 },
         "academicYear": { "type": "string", "maxLength": 40 },
         "lastBackupAt": { "type": "string", "maxLength": 40 },
+        "adminPinHash": { "type": "string", "maxLength": 128 },
         "updatedBy": { "type": "string", "maxLength": 128 },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

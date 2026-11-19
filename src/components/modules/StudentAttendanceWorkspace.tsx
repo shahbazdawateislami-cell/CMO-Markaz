@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Calendar, Eye, Check, X } from 'lucide-react';
+import { Calendar, Download, Eye, Check, Trash2, X } from 'lucide-react';
 import { useCMO } from '../../context/CMOContext';
 import { formatCounter, Student, StudentAttendance } from '../../types';
 import {
+  exportToCsv,
   getCurrentMonthStr,
   getPreviousMonthStr,
   getTodayStr,
@@ -42,6 +43,7 @@ export function StudentAttendanceWorkspace({
     isSuperAdmin,
     createRecord,
     updateRecord,
+    deleteRecord,
     notify,
   } = useCMO();
 
@@ -61,6 +63,7 @@ export function StudentAttendanceWorkspace({
 
   // Individual Student Profile Modal
   const [profileStudent, setProfileStudent] = useState<Student | null>(null);
+  const [confirmDeleteAttId, setConfirmDeleteAttId] = useState('');
 
   const programClasses = useMemo(
     () => classes.filter((c) => c.programType === programType),
@@ -210,6 +213,21 @@ export function StudentAttendanceWorkspace({
       notify(`Attendance record ${approve ? 'approved' : 'rejected'}.`, 'success');
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Approval update failed.', 'error');
+    }
+  };
+
+  const handleDeleteAttendance = async (rec: StudentAttendance) => {
+    if (!isSuperAdmin) return;
+    try {
+      await deleteRecord('student_attendance', rec.id, {
+        action: 'Deleted Student Attendance Log',
+        module: programType === 'madrasa' ? 'Madrasas' : 'QADRI 40',
+        details: `Deleted ${rec.studentName} (${rec.date})`,
+      });
+      setConfirmDeleteAttId('');
+      notify(`Deleted attendance record for ${rec.studentName}.`, 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Delete failed.', 'error');
     }
   };
 
@@ -596,9 +614,31 @@ export function StudentAttendanceWorkspace({
       {/* Historical Records & All 7 Date Filters */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <h4 className="text-sm font-semibold text-slate-900">
-            Attendance History &amp; Session Ledger ({formatCounter(dateFilteredAttendance.length)})
-          </h4>
+          <div className="flex items-center gap-3">
+            <h4 className="text-sm font-semibold text-slate-900">
+              Attendance History &amp; Session Ledger ({formatCounter(dateFilteredAttendance.length)})
+            </h4>
+            {dateFilteredAttendance.length > 0 && (
+              <button
+                onClick={() =>
+                  exportToCsv(
+                    `${programType}_attendance_${filterMode}.csv`,
+                    ['Date', 'Roll No', 'Student', 'Status', 'Approval'],
+                    dateFilteredAttendance.map((r) => [
+                      r.date,
+                      r.rollNo,
+                      r.studentName,
+                      r.status,
+                      r.approvalStatus,
+                    ])
+                  )
+                }
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100"
+              >
+                <Download className="w-3 h-3" /> Export Filtered CSV
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
@@ -675,6 +715,7 @@ export function StudentAttendanceWorkspace({
                   <th className="py-2 px-3">Student</th>
                   <th className="py-2 px-3">Status</th>
                   <th className="py-2 px-3">Approval</th>
+                  {isSuperAdmin && <th className="py-2 px-3 text-right">Admin</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -689,6 +730,24 @@ export function StudentAttendanceWorkspace({
                     <td className="py-2 px-3">
                       <StatusTag status={r.approvalStatus} />
                     </td>
+                    {isSuperAdmin && (
+                      <td className="py-2 px-3 text-right space-x-1 whitespace-nowrap">
+                        {confirmDeleteAttId === r.id ? (
+                          <>
+                            <button onClick={() => handleDeleteAttendance(r)} className="px-2 py-0.5 text-xs bg-red-600 text-white rounded">Confirm</button>
+                            <button onClick={() => setConfirmDeleteAttId('')} className="px-2 py-0.5 text-xs border border-slate-200 rounded">No</button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteAttId(r.id)}
+                            className="p-1 text-red-700 hover:bg-red-50 rounded"
+                            aria-label="Delete attendance"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

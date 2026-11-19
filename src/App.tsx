@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
 import {
   ChevronRight,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Lock,
   LogIn,
   LogOut,
   Menu,
   ShieldCheck,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -20,9 +25,9 @@ import {
   ReportsAnalyticsModule,
 } from './components/modules/NoticeAndReportsModules';
 import { OnlineAdmissionModule } from './components/modules/OnlineAdmissionModule';
-import { OperationalDepartmentModule } from './components/modules/OperationalDepartmentModule';
 import { SuperAdminModule } from './components/modules/SuperAdminModule';
 import { TeacherManagementModule } from './components/modules/TeacherManagementModule';
+import { EmptyState } from './components/SharedUI';
 import { AUTH_LOCK_ENABLED, CMOProvider, useCMO } from './context/CMOContext';
 import { CMO_MODULES, ModuleKey } from './types';
 
@@ -34,7 +39,7 @@ function ToastStack() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`flex items-start justify-between gap-3 px-4 py-3 rounded-xl border text-xs font-medium bg-white ${
+          className={`flex items-start justify-between gap-3 px-4 py-3 rounded-xl border text-xs font-medium bg-white shadow-sm ${
             t.type === 'error'
               ? 'border-red-200 text-red-800'
               : t.type === 'success'
@@ -52,6 +57,154 @@ function ToastStack() {
   );
 }
 
+function ModuleCredentialGate({
+  moduleKey,
+  onReturnHome,
+}: {
+  moduleKey: ModuleKey;
+  onReturnHome: () => void;
+}) {
+  const {
+    hasAdminPin,
+    loginWithStaffCredentials,
+    unlockAdminWithPin,
+    notify,
+  } = useCMO();
+
+  const [loginIdInput, setLoginIdInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [adminPinInput, setAdminPinInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const modLabel =
+    CMO_MODULES.find((m) => m.key === moduleKey)?.label || moduleKey.toUpperCase();
+
+  const handleStaffVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    const res = loginWithStaffCredentials(loginIdInput, passwordInput);
+    if (!res.ok) {
+      setErrorMsg(res.error || 'Invalid credentials.');
+      return;
+    }
+    notify(`Signed in as ${res.employee?.fullName} (${res.employee?.loginId || res.employee?.employeeCode}).`, 'success');
+  };
+
+  const handleAdminUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    const res = unlockAdminWithPin(adminPinInput);
+    if (!res.ok) {
+      setErrorMsg(res.error || 'Invalid Admin Security PIN.');
+      return;
+    }
+    setAdminPinInput('');
+    notify('Admin Security session unlocked.', 'success');
+  };
+
+  return (
+    <div className="max-w-lg mx-auto my-8 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800 shrink-0">
+          <Lock className="w-5 h-5" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">
+            {modLabel} — ID &amp; Password Required
+          </h2>
+          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+            Access to <strong>{modLabel}</strong> is protected. Enter your HR-assigned Teacher or Employee Login ID and Password to open your authorized workspace.
+          </p>
+        </div>
+      </div>
+
+      {errorMsg && (
+        <div className="px-3.5 py-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 font-medium">
+          {errorMsg}
+        </div>
+      )}
+
+      <form onSubmit={handleStaffVerify} className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1">
+            Employee / Teacher Login ID
+          </label>
+          <input
+            type="text"
+            required
+            autoFocus
+            placeholder="e.g. TCH-101 or EMP-001"
+            value={loginIdInput}
+            onChange={(e) => setLoginIdInput(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1">Password</label>
+          <div className="relative">
+            <input
+              type={showPw ? 'text' : 'password'}
+              required
+              placeholder="Enter password assigned by HR"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              className="w-full pl-3 pr-9 py-2 text-sm border border-slate-200 rounded-lg font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw((v) => !v)}
+              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700"
+              aria-label="Toggle password visibility"
+            >
+              {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="submit"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg"
+          >
+            <KeyRound className="w-3.5 h-3.5" /> Verify &amp; Open {modLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onReturnHome}
+            className="px-4 py-2 text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 rounded-lg"
+          >
+            Back
+          </button>
+        </div>
+      </form>
+
+      {hasAdminPin && (
+        <form onSubmit={handleAdminUnlock} className="pt-4 border-t border-slate-200 space-y-3">
+          <div className="text-xs font-semibold text-slate-700">
+            Super Admin / Owner PIN Unlock
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              required
+              placeholder="Enter Master Admin PIN"
+              value={adminPinInput}
+              onChange={(e) => setAdminPinInput(e.target.value)}
+              className="flex-1 px-3 py-1.5 text-xs border border-slate-200 rounded-lg font-mono"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg"
+            >
+              Unlock as Admin
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function CMOWorkspace() {
   const {
     firebaseUser,
@@ -59,15 +212,33 @@ function CMOWorkspace() {
     authReady,
     signInWithGoogle,
     signOut,
-    isSuperAdmin,
-    isHR,
-    isPrincipal,
-    isTeacher,
+    staffSessionEmployee,
+    isStaffSessionActive,
+    hasAdminPin,
+    isAdminUnlocked,
+    loginWithStaffCredentials,
+    logoutStaffSession,
+    unlockAdminWithPin,
+    lockAdminSession,
+    hasModuleAccess,
+    needsModuleCredentialGate,
     isActiveStaff,
+    notify,
   } = useCMO();
 
   const [activeModule, setActiveModule] = useState<ModuleKey>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Staff Login Modal & Admin PIN Modal state
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [staffIdInput, setStaffIdInput] = useState('');
+  const [staffPwInput, setStaffPwInput] = useState('');
+  const [showStaffPw, setShowStaffPw] = useState(false);
+  const [staffModalError, setStaffModalError] = useState('');
+
+  const [showAdminPinModal, setShowAdminPinModal] = useState(false);
+  const [adminPinInput, setAdminPinInput] = useState('');
+  const [adminPinError, setAdminPinError] = useState('');
 
   if (AUTH_LOCK_ENABLED) {
     if (!authReady) {
@@ -131,16 +302,78 @@ function CMOWorkspace() {
     }
   }
 
-  const showTeacherNav = !firebaseUser ? true : isTeacher || isPrincipal || isHR;
-  const showHRNav = !firebaseUser ? true : isHR;
-  const showAdminNav = !firebaseUser ? true : isSuperAdmin;
+  const showTeacherNav = hasModuleAccess('teacher_management');
+  const showHRNav = hasModuleAccess('hr_control_panel');
+  const showAdminNav = hasModuleAccess('super_admin_panel');
 
   const navigate = (mod: ModuleKey) => {
     setActiveModule(mod);
     setMobileMenuOpen(false);
   };
 
+  const handleStaffModalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setStaffModalError('');
+    const res = loginWithStaffCredentials(staffIdInput, staffPwInput);
+    if (!res.ok) {
+      setStaffModalError(res.error || 'Login failed.');
+      return;
+    }
+    setShowStaffModal(false);
+    setStaffIdInput('');
+    setStaffPwInput('');
+    notify(
+      `Welcome ${res.employee?.fullName} (${(res.employee?.staffRole || 'teacher').replace(/_/g, ' ')})`,
+      'success'
+    );
+    // If currently on an HR/Admin page, redirect cleanly to home or ESS
+    if (
+      activeModule === 'hr_payroll' ||
+      activeModule === 'hr_control_panel' ||
+      activeModule === 'super_admin_panel'
+    ) {
+      setActiveModule(res.employee?.moduleAccess?.ess !== false ? 'ess' : 'home');
+    }
+  };
+
+  const handleAdminPinSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminPinError('');
+    const res = unlockAdminWithPin(adminPinInput);
+    if (!res.ok) {
+      setAdminPinError(res.error || 'Incorrect Admin PIN.');
+      return;
+    }
+    setShowAdminPinModal(false);
+    setAdminPinInput('');
+    notify('Super Admin / HR terminal unlocked.', 'success');
+  };
+
   const renderModule = () => {
+    if (activeModule !== 'home' && !hasModuleAccess(activeModule)) {
+      return (
+        <EmptyState
+          title="Module Access Restricted"
+          description={
+            isStaffSessionActive
+              ? `Your Teacher/Employee profile (${staffSessionEmployee?.fullName}) does not have access to this section. HR & Payroll and Super Admin sections are restricted from Teachers.`
+              : 'You do not have permission to open this module. Contact HR or Super Admin.'
+          }
+          actionLabel="Return to Homepage"
+          onAction={() => navigate('home')}
+        />
+      );
+    }
+
+    if (needsModuleCredentialGate(activeModule)) {
+      return (
+        <ModuleCredentialGate
+          moduleKey={activeModule}
+          onReturnHome={() => navigate('home')}
+        />
+      );
+    }
+
     switch (activeModule) {
       case 'home':
         return <HomeOverview onNavigate={navigate} />;
@@ -175,8 +408,8 @@ function CMOWorkspace() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Bar Contract: 3 zones (Wordmark — Nav Links — Primary Action) */}
-      <header className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 px-4 lg:px-6 h-14 flex items-center justify-between gap-8">
+      {/* Top Bar Contract: 3 zones (Wordmark — Nav Links — Session Controls) */}
+      <header className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 px-4 lg:px-6 h-14 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={() => setMobileMenuOpen((v) => !v)}
@@ -193,23 +426,25 @@ function CMOWorkspace() {
           </button>
         </div>
 
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+        <nav className="hidden md:flex items-center gap-5 text-sm font-medium text-slate-600">
           <button
             onClick={() => navigate('home')}
             className={`whitespace-nowrap shrink-0 hover:text-slate-900 transition-colors ${
               activeModule === 'home' ? 'text-emerald-800 font-semibold' : ''
             }`}
           >
-            17 Modules
+            CMO Directory
           </button>
-          <button
-            onClick={() => navigate('ess')}
-            className={`whitespace-nowrap shrink-0 hover:text-slate-900 transition-colors ${
-              activeModule === 'ess' ? 'text-emerald-800 font-semibold' : ''
-            }`}
-          >
-            ESS
-          </button>
+          {hasModuleAccess('ess') && (
+            <button
+              onClick={() => navigate('ess')}
+              className={`whitespace-nowrap shrink-0 hover:text-slate-900 transition-colors ${
+                activeModule === 'ess' ? 'text-emerald-800 font-semibold' : ''
+              }`}
+            >
+              ESS
+            </button>
+          )}
           {showTeacherNav && (
             <button
               onClick={() => navigate('teacher_management')}
@@ -242,7 +477,63 @@ function CMOWorkspace() {
           )}
         </nav>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          {isStaffSessionActive && staffSessionEmployee ? (
+            <div className="flex items-center gap-2">
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg">
+                <UserCheck className="w-3.5 h-3.5" />
+                {staffSessionEmployee.fullName} ({staffSessionEmployee.loginId || staffSessionEmployee.employeeCode})
+              </span>
+              <button
+                onClick={() => {
+                  logoutStaffSession();
+                  navigate('home');
+                  notify('Staff session signed out.', 'info');
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg whitespace-nowrap"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Staff Logout
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setStaffModalError('');
+                setShowStaffModal(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              Teacher / Staff Login
+            </button>
+          )}
+
+          {hasAdminPin && (
+            isAdminUnlocked ? (
+              <button
+                onClick={() => {
+                  lockAdminSession();
+                  navigate('home');
+                  notify('Admin terminal locked.', 'info');
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg whitespace-nowrap"
+              >
+                <Lock className="w-3.5 h-3.5" /> Lock Admin
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setAdminPinError('');
+                  setShowAdminPinModal(true);
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg whitespace-nowrap"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Admin PIN
+              </button>
+            )
+          )}
+
           {firebaseUser ? (
             <button
               onClick={signOut}
@@ -264,7 +555,7 @@ function CMOWorkspace() {
       </header>
 
       <div className="flex-1 flex">
-        {/* Sidebar Navigation: Exact 1-17 ordered modules + Governance consoles */}
+        {/* Sidebar Navigation */}
         <aside
           className={`no-print fixed inset-y-0 left-0 top-14 z-20 w-64 bg-white border-r border-slate-200 overflow-y-auto transition-transform lg:static lg:translate-x-0 ${
             mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
@@ -287,29 +578,41 @@ function CMOWorkspace() {
 
             <div>
               <div className="px-3 mb-1.5 text-[11px] font-semibold text-slate-400">
-                Core &amp; Department Modules (01–17)
+                Institutional Modules (01–09)
               </div>
               <div className="space-y-0.5">
                 {CMO_MODULES.map((mod) => {
+                  const allowed = hasModuleAccess(mod.key);
+                  if (!allowed) return null;
+                  const gated = needsModuleCredentialGate(mod.key);
                   const active = activeModule === mod.key;
                   return (
                     <button
                       key={mod.key}
                       onClick={() => navigate(mod.key)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs rounded-lg transition-colors text-left ${
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs rounded-lg transition-colors text-left ${
                         active
                           ? 'bg-emerald-800 text-white font-medium'
                           : 'text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      <span
-                        className={`font-mono tabular-nums text-[11px] w-5 shrink-0 ${
-                          active ? 'text-emerald-200' : 'text-slate-400'
-                        }`}
-                      >
-                        {String(mod.order).padStart(2, '0')}
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className={`font-mono tabular-nums text-[11px] w-5 shrink-0 ${
+                            active ? 'text-emerald-200' : 'text-slate-400'
+                          }`}
+                        >
+                          {String(mod.order).padStart(2, '0')}
+                        </span>
+                        <span className="truncate">{mod.label}</span>
                       </span>
-                      <span className="truncate">{mod.label}</span>
+                      {gated && (
+                        <Lock
+                          className={`w-3 h-3 shrink-0 ${
+                            active ? 'text-emerald-200' : 'text-amber-600'
+                          }`}
+                        />
+                      )}
                     </button>
                   );
                 })}
@@ -369,6 +672,145 @@ function CMOWorkspace() {
           {renderModule()}
         </main>
       </div>
+
+      {/* Staff / Teacher ID & Password Modal */}
+      {showStaffModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleStaffModalSubmit}
+            className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-emerald-800" />
+                <h3 className="text-base font-semibold text-slate-900">
+                  Teacher / Employee ID Login
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStaffModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600">
+              Sign in with the Login ID and Password configured in HR &amp; Payroll to access your permitted ESS, ERP, E-Raseed, and Teacher workspaces.
+            </p>
+            {staffModalError && (
+              <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 font-medium">
+                {staffModalError}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Employee / Teacher Login ID
+              </label>
+              <input
+                type="text"
+                required
+                autoFocus
+                placeholder="e.g. TCH-101"
+                value={staffIdInput}
+                onChange={(e) => setStaffIdInput(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>
+              <div className="relative">
+                <input
+                  type={showStaffPw ? 'text' : 'password'}
+                  required
+                  value={staffPwInput}
+                  onChange={(e) => setStaffPwInput(e.target.value)}
+                  className="w-full pl-3 pr-9 py-2 text-sm border border-slate-200 rounded-lg font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowStaffPw((v) => !v)}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700"
+                >
+                  {showStaffPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowStaffModal(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg"
+              >
+                Sign In to Workspace
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Admin PIN Unlock Modal */}
+      {showAdminPinModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleAdminPinSubmit}
+            className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-800" />
+                <h3 className="text-base font-semibold text-slate-900">Admin Security PIN</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminPinModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {adminPinError && (
+              <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 font-medium">
+                {adminPinError}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Enter Master Admin Security PIN
+              </label>
+              <input
+                type="password"
+                required
+                autoFocus
+                value={adminPinInput}
+                onChange={(e) => setAdminPinInput(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAdminPinModal(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg"
+              >
+                Unlock Admin
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

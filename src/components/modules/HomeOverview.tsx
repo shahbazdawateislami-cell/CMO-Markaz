@@ -1,27 +1,20 @@
 import React from 'react';
 import {
   ArrowRight,
-  BookOpen,
-  Building2,
-  CalendarCheck,
   ClipboardCheck,
   Coins,
-  FileText,
-  FolderKanban,
   GraduationCap,
   Landmark,
   Layers,
-  Library,
+  Lock,
   Megaphone,
   Receipt,
-  Scale,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
   UserCheck,
   Users,
 } from 'lucide-react';
-import { AUTH_LOCK_ENABLED, useCMO } from '../../context/CMOContext';
+import { useCMO } from '../../context/CMOContext';
 import { CMO_MODULES, formatCounter, ModuleKey } from '../../types';
 import { CounterStat, SectionHeader } from '../SharedUI';
 
@@ -41,10 +34,11 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
   const {
     firebaseUser,
     userProfile,
-    isSuperAdmin,
-    isHR,
-    isPrincipal,
-    isTeacher,
+    staffSessionEmployee,
+    isStaffSessionActive,
+    hasModuleAccess,
+    needsModuleCredentialGate,
+    effectiveRole,
     branches,
     departments,
     employees,
@@ -54,7 +48,6 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
     studentAttendance,
     eraseedReceipts,
     notices,
-    departmentCases,
     financeLedger,
     academics,
     leaveRequests,
@@ -97,20 +90,22 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
   ).length;
   const pendingLeaves = leaveRequests.filter((l) => l.status === 'pending').length;
 
-  const isGuestOpen = !firebaseUser && !AUTH_LOCK_ENABLED;
-  const showTeacherQuick = isGuestOpen || isTeacher || isPrincipal || isHR;
-  const showHRQuick = isGuestOpen || isHR;
-  const showAdminQuick = isGuestOpen || isSuperAdmin;
+  const showTeacherQuick = hasModuleAccess('teacher_management');
+  const showHRQuick = hasModuleAccess('hr_control_panel');
+  const showAdminQuick = hasModuleAccess('super_admin_panel');
+  const canOpenHRPayroll = hasModuleAccess('hr_payroll');
+
+  const subtitle = isStaffSessionActive && staffSessionEmployee
+    ? `Signed in as ${staffSessionEmployee.fullName} (${effectiveRole.replace(/_/g, ' ')}) · ID: ${staffSessionEmployee.loginId || staffSessionEmployee.employeeCode}`
+    : firebaseUser
+      ? `Centralized Multi-Branch Operations · Signed in as ${userProfile?.displayName || 'Staff'} (${effectiveRole.replace(/_/g, ' ')})`
+      : 'Centralized Multi-Branch Operations · Markazi CMO Institutional Directory';
 
   return (
     <div className="space-y-6">
       <SectionHeader
         title="Markazi CMO Institutional Directory"
-        subtitle={
-          firebaseUser
-            ? `Centralized Multi-Branch Operations · Signed in as ${userProfile?.displayName || 'Staff'} (${(userProfile?.role || 'staff').replace(/_/g, ' ')})`
-            : 'Centralized Multi-Branch Operations · Open Directory View'
-        }
+        subtitle={subtitle}
         action={
           <div className="flex flex-wrap items-center gap-2">
             {showTeacherQuick && (
@@ -175,15 +170,18 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
           </button>
 
           <button
-            onClick={() => onNavigate('hr_payroll')}
-            className="text-left p-3 rounded-lg border border-slate-200 hover:border-emerald-700 transition-colors"
+            onClick={() => canOpenHRPayroll && onNavigate('hr_payroll')}
+            disabled={!canOpenHRPayroll}
+            className="text-left p-3 rounded-lg border border-slate-200 hover:border-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
           >
             <div className="text-xs text-slate-500">Teacher Attendance (Principal)</div>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="text-lg font-semibold font-mono tabular-nums text-slate-900">
                 {formatCounter(pendingTeacherAtt)}
               </span>
-              <span className="text-xs font-medium text-emerald-800">Review</span>
+              <span className="text-xs font-medium text-emerald-800">
+                {canOpenHRPayroll ? 'Review' : 'HR Restricted'}
+              </span>
             </div>
           </button>
 
@@ -201,25 +199,28 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
           </button>
 
           <button
-            onClick={() => onNavigate('hr_payroll')}
-            className="text-left p-3 rounded-lg border border-slate-200 hover:border-emerald-700 transition-colors"
+            onClick={() => canOpenHRPayroll && onNavigate('hr_payroll')}
+            disabled={!canOpenHRPayroll}
+            className="text-left p-3 rounded-lg border border-slate-200 hover:border-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
           >
             <div className="text-xs text-slate-500">Employee Leave Requests</div>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="text-lg font-semibold font-mono tabular-nums text-slate-900">
                 {formatCounter(pendingLeaves)}
               </span>
-              <span className="text-xs font-medium text-emerald-800">Inspect</span>
+              <span className="text-xs font-medium text-emerald-800">
+                {canOpenHRPayroll ? 'Inspect' : 'HR Restricted'}
+              </span>
             </div>
           </button>
         </div>
       </div>
 
-      {/* Exact 1-17 Ordered Modules Grid */}
+      {/* Institutional Modules Grid */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-slate-900">
-            Institutional Modules (01 – 17)
+            Institutional Modules (01 – 09)
           </h3>
           <span className="text-xs text-slate-500">
             Centralized Firebase Firestore · Real-Time Synchronization
@@ -230,11 +231,18 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
           {CMO_MODULES.map((mod) => {
             const Icon = MODULE_ICONS[mod.key] || Coins;
             const count = moduleCount(mod.key);
+            const allowed = hasModuleAccess(mod.key);
+            const gated = needsModuleCredentialGate(mod.key);
             return (
               <button
                 key={mod.key}
-                onClick={() => onNavigate(mod.key)}
-                className="group text-left bg-white border border-slate-200 hover:border-emerald-700 rounded-xl p-4 transition-colors flex flex-col justify-between"
+                onClick={() => allowed && onNavigate(mod.key)}
+                disabled={!allowed}
+                className={`group text-left bg-white border rounded-xl p-4 transition-colors flex flex-col justify-between ${
+                  allowed
+                    ? 'border-slate-200 hover:border-emerald-700'
+                    : 'border-slate-200 opacity-55 cursor-not-allowed bg-slate-50'
+                }`}
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-3">
@@ -242,7 +250,11 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
                       {String(mod.order).padStart(2, '0')} · {mod.category}
                     </span>
                     <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700 group-hover:text-emerald-800 group-hover:border-emerald-200">
-                      <Icon className="w-4 h-4" />
+                      {gated || !allowed ? (
+                        <Lock className="w-4 h-4 text-amber-700" />
+                      ) : (
+                        <Icon className="w-4 h-4" />
+                      )}
                     </div>
                   </div>
                   <h4 className="text-base font-semibold text-slate-900 group-hover:text-emerald-900">
@@ -258,8 +270,10 @@ export function HomeOverview({ onNavigate }: { onNavigate: (mod: ModuleKey) => v
                     Records: <strong className="text-slate-900">{formatCounter(count)}</strong>
                   </span>
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-800">
-                    Open
-                    <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                    {!allowed ? 'Restricted' : gated ? 'ID & Password' : 'Open'}
+                    {allowed && (
+                      <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                    )}
                   </span>
                 </div>
               </button>

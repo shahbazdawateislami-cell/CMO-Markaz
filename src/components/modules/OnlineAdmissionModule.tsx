@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, FileCheck2, ShieldCheck, UserPlus, XCircle } from 'lucide-react';
+import { CheckCircle2, FileCheck2, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react';
 import { useCMO } from '../../context/CMOContext';
 import { Admission, formatCounter } from '../../types';
 import { makeSafeId, sanitizeStr } from '../../utils/validation';
@@ -14,16 +14,20 @@ export function OnlineAdmissionModule() {
     classes,
     sessions,
     admissions,
+    students,
     isTeacher,
     isPrincipal,
     isHR,
     isSuperAdmin,
     createRecord,
     updateRecord,
+    deleteRecord,
     approveAdmissionFinal,
     uploadPhoto,
     notify,
   } = useCMO();
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState('');
 
   const [studentName, setStudentName] = useState('');
   const [fatherName, setFatherName] = useState('');
@@ -66,7 +70,11 @@ export function OnlineAdmissionModule() {
     }
 
     const id = makeSafeId('adm');
-    const appNo = `ADM-${new Date().getFullYear()}-${String(admissions.length + 1).padStart(4, '0')}`;
+    const maxAppNum = admissions.reduce((max, a) => {
+      const tail = Number(a.applicationNo.split('-').pop() || '0');
+      return Number.isFinite(tail) && tail > max ? tail : max;
+    }, admissions.length);
+    const appNo = `ADM-${new Date().getFullYear()}-${String(maxAppNum + 1).padStart(4, '0')}`;
     try {
       await createRecord(
         'admissions',
@@ -163,14 +171,19 @@ export function OnlineAdmissionModule() {
     e.preventDefault();
     if (!approvingAdmission) return;
     const chosenClass = classes.find((c) => c.id === assignClassId);
-    if (!chosenClass || !assignRollNo.trim()) {
+    const cleanRoll = assignRollNo.trim();
+    if (!chosenClass || !cleanRoll) {
       notify('Select an enrolled class and assign a Roll No to activate the admission.', 'error');
       return;
     }
+    if (students.some((s) => s.rollNo.trim().toLowerCase() === cleanRoll.toLowerCase())) {
+      notify(`Roll No "${cleanRoll}" is already assigned to an active student.`, 'error');
+      return;
+    }
     try {
-      await approveAdmissionFinal(approvingAdmission, chosenClass, assignRollNo);
+      await approveAdmissionFinal(approvingAdmission, chosenClass, cleanRoll);
       notify(
-        `Admission ${approvingAdmission.applicationNo} is now ACTIVE and enrolled as Roll ${assignRollNo}.`,
+        `Admission ${approvingAdmission.applicationNo} is now ACTIVE and enrolled as Roll ${cleanRoll}.`,
         'success'
       );
       setApprovingAdmission(null);
@@ -203,6 +216,30 @@ export function OnlineAdmissionModule() {
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Reject failed.', 'error');
     }
+  };
+
+  const handleDeleteAdmission = async (adm: Admission) => {
+    if (!isSuperAdmin) return;
+    try {
+      await deleteRecord('admissions', adm.id, {
+        action: 'Deleted Admission Application',
+        module: 'Online Admission',
+        details: `Deleted ${adm.applicationNo} (${adm.studentName})`,
+      });
+      setConfirmDeleteId('');
+      notify(`Deleted application ${adm.applicationNo}.`, 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Delete failed.', 'error');
+    }
+  };
+
+  const nextAvailableRollNo = () => {
+    const used = new Set(students.map((s) => s.rollNo.trim().toLowerCase()));
+    let num = students.length + 1;
+    while (used.has(`r-${String(num).padStart(3, '0')}`)) {
+      num += 1;
+    }
+    return `R-${String(num).padStart(3, '0')}`;
   };
 
   const counts = {
@@ -294,7 +331,7 @@ export function OnlineAdmissionModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">B-Form / CNIC</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Aadhaar / Birth ID / Reg No</label>
               <input
                 type="text"
                 value={cnicOrBForm}
@@ -518,7 +555,7 @@ export function OnlineAdmissionModule() {
                                   onClick={() => {
                                     setApprovingAdmission(adm);
                                     setAssignClassId(adm.classId || '');
-                                    setAssignRollNo(`R-${String(admissions.length).padStart(3, '0')}`);
+                                    setAssignRollNo(nextAvailableRollNo());
                                   }}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-md"
                                 >
@@ -532,6 +569,21 @@ export function OnlineAdmissionModule() {
                                 </button>
                               </>
                             )}
+                            {isSuperAdmin && adm.workflowStatus !== 'active' &&
+                              (confirmDeleteId === adm.id ? (
+                                <>
+                                  <button onClick={() => handleDeleteAdmission(adm)} className="px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md">Confirm</button>
+                                  <button onClick={() => setConfirmDeleteId('')} className="px-2 py-1 text-xs border border-slate-200 rounded-md">No</button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmDeleteId(adm.id)}
+                                  className="inline-flex items-center px-2 py-1 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md"
+                                  aria-label="Delete application"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              ))}
                           </td>
                         </tr>
                       );

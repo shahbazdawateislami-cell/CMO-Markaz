@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Download, Shield } from 'lucide-react';
-import { AUTH_LOCK_ENABLED, useCMO } from '../../context/CMOContext';
+import React, { useEffect, useState } from 'react';
+import { Download, KeyRound, Shield } from 'lucide-react';
+import { useCMO } from '../../context/CMOContext';
 import { formatCounter, ModuleKey, UserRole } from '../../types';
 import { exportToCsv, sanitizeStr } from '../../utils/validation';
 import { CounterStat, EmptyState, SectionHeader, StatusTag } from '../SharedUI';
@@ -44,7 +44,6 @@ const HR_CONTROL_ITEMS: { id: HRControlArea; label: string }[] = [
 
 export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => void }) {
   const {
-    firebaseUser,
     actorUid,
     users,
     branches,
@@ -61,20 +60,30 @@ export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => v
     systemConfigs,
     isHR,
     isSuperAdmin,
+    hasAdminPin,
+    saveAdminPin,
     createRecord,
     updateRecord,
     notify,
   } = useCMO();
 
   const [area, setArea] = useState<HRControlArea>('user_access');
+  const masterCfg = systemConfigs.find((c) => c.configType === 'master');
   const [institutionName, setInstitutionName] = useState(
-    systemConfigs.find((c) => c.configType === 'master')?.institutionName || 'Markazi CMO'
+    masterCfg?.institutionName || 'Markazi CMO'
   );
   const [academicYear, setAcademicYear] = useState(
-    systemConfigs.find((c) => c.configType === 'master')?.academicYear || '2026-2027'
+    masterCfg?.academicYear || '2026-2027'
   );
+  const [curPin, setCurPin] = useState('');
+  const [newPin, setNewPin] = useState('');
 
-  if ((AUTH_LOCK_ENABLED || firebaseUser) && !isHR) {
+  useEffect(() => {
+    if (masterCfg?.institutionName) setInstitutionName(masterCfg.institutionName);
+    if (masterCfg?.academicYear) setAcademicYear(masterCfg.academicYear);
+  }, [masterCfg?.institutionName, masterCfg?.academicYear]);
+
+  if (!isHR && !isSuperAdmin) {
     return (
       <EmptyState
         title="Restricted to HR & Super Admin"
@@ -106,11 +115,12 @@ export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => v
   };
 
   const handleExportBackup = async () => {
+    const safeEmployees = employees.map(({ passwordHash: _pw, ...rest }) => rest);
     const payload = {
       exportedAt: new Date().toISOString(),
       branches,
       departments,
-      employees,
+      employees: safeEmployees,
       students,
       admissions,
       employeeAttendance,
@@ -126,13 +136,17 @@ export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => v
     URL.revokeObjectURL(url);
 
     if (actorUid) {
-      await createRecord('system_config', 'backup_meta', {
-        configType: 'backup',
-        lastBackupAt: new Date().toISOString(),
-        updatedBy: actorUid,
-      });
+      try {
+        await createRecord('system_config', 'backup_meta', {
+          configType: 'backup',
+          lastBackupAt: new Date().toISOString(),
+          updatedBy: actorUid,
+        });
+      } catch {
+        // Backup download already completed; ignore optional metadata error
+      }
     }
-    notify('Institutional JSON backup downloaded.', 'success');
+    notify('Institutional JSON backup downloaded (password hashes excluded).', 'success');
   };
 
   return (
@@ -444,40 +458,88 @@ export function HRControlPanel({ onNavigate }: { onNavigate: (m: ModuleKey) => v
       )}
 
       {(area === 'settings_master' || area === 'system_config') && (
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!actorUid) return;
-            try {
-              await createRecord('system_config', 'master_config', {
-                configType: 'master',
-                institutionName: sanitizeStr(institutionName, 120),
-                academicYear: sanitizeStr(academicYear, 40),
-                updatedBy: actorUid,
-              });
-              notify('Master system configuration updated.', 'success');
-            } catch (err) {
-              notify(err instanceof Error ? err.message : 'Failed to save configuration.', 'error');
-            }
-          }}
-          className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 max-w-xl"
-        >
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-emerald-800" />
-            <h3 className="text-base font-semibold text-slate-900">Settings &amp; Master Configuration</h3>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Central Institution Name</label>
-            <input type="text" required value={institutionName} onChange={(e) => setInstitutionName(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Active Academic Year</label>
-            <input type="text" required value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono" />
-          </div>
-          <button type="submit" className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 rounded-lg">
-            Save Configuration
-          </button>
-        </form>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!actorUid) return;
+              try {
+                await createRecord('system_config', 'master_config', {
+                  configType: 'master',
+                  institutionName: sanitizeStr(institutionName, 120),
+                  academicYear: sanitizeStr(academicYear, 40),
+                  ...(masterCfg?.adminPinHash ? { adminPinHash: masterCfg.adminPinHash } : {}),
+                  updatedBy: actorUid,
+                });
+                notify('Master system configuration updated.', 'success');
+              } catch (err) {
+                notify(err instanceof Error ? err.message : 'Failed to save configuration.', 'error');
+              }
+            }}
+            className="bg-white border border-slate-200 rounded-xl p-6 space-y-4"
+          >
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-800" />
+              <h3 className="text-base font-semibold text-slate-900">Settings &amp; Master Configuration</h3>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Central Institution Name</label>
+              <input type="text" required value={institutionName} onChange={(e) => setInstitutionName(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Active Academic Year</label>
+              <input type="text" required value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono" />
+            </div>
+            <button type="submit" className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg">
+              Save Configuration
+            </button>
+          </form>
+
+          {isSuperAdmin && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const res = await saveAdminPin(newPin, hasAdminPin ? curPin : undefined);
+                if (!res.ok) {
+                  notify(res.error || 'Failed to update Admin PIN.', 'error');
+                  return;
+                }
+                setCurPin('');
+                setNewPin('');
+                notify(
+                  newPin.trim()
+                    ? 'Master Admin Security PIN saved. You can lock the terminal anytime from the top bar.'
+                    : 'Master Admin Security PIN cleared.',
+                  'success'
+                );
+              }}
+              className="bg-white border border-slate-200 rounded-xl p-6 space-y-4"
+            >
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-emerald-800" />
+                <h3 className="text-base font-semibold text-slate-900">
+                  Admin Terminal Security PIN ({hasAdminPin ? 'Active' : 'Not Set'})
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500">
+                Protect HR &amp; Payroll, HR Control Panel, and Super Admin Authority on shared terminals. Leave New PIN blank to remove lock.
+              </p>
+              {hasAdminPin && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Current Admin PIN</label>
+                  <input type="password" required value={curPin} onChange={(e) => setCurPin(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono" />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">New Admin PIN (min 4 chars)</label>
+                <input type="password" placeholder={hasAdminPin ? 'New PIN or blank to remove' : 'Min 4 characters'} value={newPin} onChange={(e) => setNewPin(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono" />
+              </div>
+              <button type="submit" className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg">
+                {hasAdminPin ? 'Update Admin PIN' : 'Enable Admin PIN Lock'}
+              </button>
+            </form>
+          )}
+        </div>
       )}
 
       {area === 'system_logs' && (

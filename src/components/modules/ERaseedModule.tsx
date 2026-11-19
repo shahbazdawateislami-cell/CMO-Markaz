@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Printer, Receipt, Search } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Printer, Receipt, Search, Trash2 } from 'lucide-react';
 import { useCMO } from '../../context/CMOContext';
 import { ERaseedReceipt, formatCounter, formatCurrency } from '../../types';
 import { exportToCsv, getCurrentMonthStr, getTodayStr, makeSafeId, sanitizeStr } from '../../utils/validation';
@@ -23,16 +23,19 @@ export function ERaseedModule() {
     isSuperAdmin,
     createRecord,
     updateRecord,
+    deleteRecord,
     notify,
   } = useCMO();
 
   const [tab, setTab] = useState<ERaseedTab>('new_receipt');
+  const [confirmDeleteId, setConfirmDeleteId] = useState('');
 
   const eraseedConfig = systemConfigs.find((c) => c.configType === 'eraseed');
+  const masterCfg = systemConfigs.find((c) => c.configType === 'master');
+  const defaultInstName = eraseedConfig?.institutionName || masterCfg?.institutionName || 'Markazi CMO';
+
   const [receiptType, setReceiptType] = useState<'Receipt' | 'Donation' | 'Deposit'>('Donation');
-  const [institutionName, setInstitutionName] = useState(
-    eraseedConfig?.institutionName || 'Markazi CMO'
-  );
+  const [institutionName, setInstitutionName] = useState(defaultInstName);
   const [branchId, setBranchId] = useState('');
   const [donorName, setDonorName] = useState('');
   const [donorPhone, setDonorPhone] = useState('');
@@ -49,10 +52,18 @@ export function ERaseedModule() {
 
   // Settings form
   const [cfgPrefix, setCfgPrefix] = useState(eraseedConfig?.receiptPrefix || 'ERS');
-  const [cfgInstitution, setCfgInstitution] = useState(
-    eraseedConfig?.institutionName || 'Markazi CMO'
-  );
+  const [cfgInstitution, setCfgInstitution] = useState(defaultInstName);
   const [cfgCurrency, setCfgCurrency] = useState(eraseedConfig?.defaultCurrency || 'INR');
+
+  useEffect(() => {
+    if (eraseedConfig?.receiptPrefix) setCfgPrefix(eraseedConfig.receiptPrefix);
+    if (eraseedConfig?.defaultCurrency) setCfgCurrency(eraseedConfig.defaultCurrency);
+    if (eraseedConfig?.institutionName || masterCfg?.institutionName) {
+      const resolved = eraseedConfig?.institutionName || masterCfg?.institutionName || 'Markazi CMO';
+      setCfgInstitution(resolved);
+      setInstitutionName(resolved);
+    }
+  }, [eraseedConfig?.receiptPrefix, eraseedConfig?.defaultCurrency, eraseedConfig?.institutionName, masterCfg?.institutionName]);
 
   const handleIssueReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,8 +74,13 @@ export function ERaseedModule() {
       return;
     }
 
-    const prefix = eraseedConfig?.receiptPrefix || 'ERS';
-    const receiptNo = `${prefix}-${receiptDate.replace(/-/g, '')}-${String(eraseedReceipts.length + 1).padStart(4, '0')}`;
+    const prefix = eraseedConfig?.receiptPrefix || cfgPrefix || 'ERS';
+    const dateSlug = receiptDate.replace(/-/g, '');
+    const maxSeq = eraseedReceipts.reduce((max, r) => {
+      const tail = Number(r.receiptNo.split('-').pop() || '0');
+      return Number.isFinite(tail) && tail > max ? tail : max;
+    }, eraseedReceipts.length);
+    const receiptNo = `${prefix}-${dateSlug}-${String(maxSeq + 1).padStart(4, '0')}`;
     const id = makeSafeId('ers');
 
     try {
@@ -119,6 +135,21 @@ export function ERaseedModule() {
       notify(`${rec.receiptNo} marked ${status}.`, 'info');
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Update failed.', 'error');
+    }
+  };
+
+  const handleDeleteReceipt = async (rec: ERaseedReceipt) => {
+    if (!isSuperAdmin) return;
+    try {
+      await deleteRecord('eraseed_receipts', rec.id, {
+        action: 'Deleted E-Raseed Receipt',
+        module: 'E-Raseed',
+        details: `Deleted ${rec.receiptNo}`,
+      });
+      setConfirmDeleteId('');
+      notify(`Deleted receipt ${rec.receiptNo}.`, 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Delete failed.', 'error');
     }
   };
 
@@ -451,6 +482,21 @@ export function ERaseedModule() {
                               </button>
                             </>
                           )}
+                          {isSuperAdmin && r.status !== 'active' &&
+                            (confirmDeleteId === r.id ? (
+                              <>
+                                <button onClick={() => handleDeleteReceipt(r)} className="px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md">Confirm</button>
+                                <button onClick={() => setConfirmDeleteId('')} className="px-2 py-1 text-xs border border-slate-200 rounded-md">No</button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDeleteId(r.id)}
+                                className="inline-flex items-center px-2 py-1 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md"
+                                aria-label="Delete receipt"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            ))}
                         </td>
                       </tr>
                     ))}
@@ -615,6 +661,9 @@ export function ERaseedModule() {
               <div className="flex justify-between"><span className="text-slate-500">Date:</span><span className="font-mono">{printTarget.receiptDate}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Type:</span><span>{printTarget.receiptType}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Donor:</span><span className="font-medium">{printTarget.donorName}</span></div>
+              {printTarget.donorPhone && (
+                <div className="flex justify-between"><span className="text-slate-500">Phone:</span><span className="font-mono">{printTarget.donorPhone}</span></div>
+              )}
               <div className="flex justify-between"><span className="text-slate-500">Niyyat:</span><span>{printTarget.niyyat}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Payment Mode:</span><span>{printTarget.paymentMode}</span></div>
               <div className="flex justify-between pt-2 border-t border-slate-200 text-base font-semibold">

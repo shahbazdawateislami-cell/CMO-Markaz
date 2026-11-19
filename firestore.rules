@@ -211,9 +211,23 @@ service cloud.firestore {
              isValidId(data.createdBy);
     }
 
+    function isValidModuleAccess(m) {
+      return m is map &&
+             m.keys().hasOnly(['ess', 'erp', 'e_raseed', 'teacher_management', 'madrasas', 'qadri_40', 'online_admission', 'notice_board', 'reports_analytics']) &&
+             (!('ess' in m) || m.ess is bool) &&
+             (!('erp' in m) || m.erp is bool) &&
+             (!('e_raseed' in m) || m.e_raseed is bool) &&
+             (!('teacher_management' in m) || m.teacher_management is bool) &&
+             (!('madrasas' in m) || m.madrasas is bool) &&
+             (!('qadri_40' in m) || m.qadri_40 is bool) &&
+             (!('online_admission' in m) || m.online_admission is bool) &&
+             (!('notice_board' in m) || m.notice_board is bool) &&
+             (!('reports_analytics' in m) || m.reports_analytics is bool);
+    }
+
     function isValidEmployee(data) {
       return data.keys().hasAll(['employeeCode', 'fullName', 'email', 'designation', 'departmentId', 'branchId', 'joiningDate', 'employmentStatus', 'onboardingStatus', 'basicSalary', 'createdBy', 'createdAt', 'updatedAt']) &&
-             data.keys().hasOnly(['employeeCode', 'uid', 'fullName', 'email', 'phone', 'cnic', 'designation', 'departmentId', 'branchId', 'joiningDate', 'employmentStatus', 'onboardingStatus', 'basicSalary', 'allowances', 'deductions', 'photoUrl', 'documents', 'achievements', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['employeeCode', 'uid', 'fullName', 'email', 'phone', 'cnic', 'designation', 'departmentId', 'branchId', 'joiningDate', 'employmentStatus', 'onboardingStatus', 'basicSalary', 'allowances', 'deductions', 'photoUrl', 'documents', 'achievements', 'staffRole', 'loginId', 'passwordHash', 'passwordProtected', 'moduleAccess', 'createdBy', 'createdAt', 'updatedAt']) &&
              isNonEmptyStr(data.employeeCode, 40) &&
              isOptStr(data, 'uid', 128) &&
              isNonEmptyStr(data.fullName, 120) &&
@@ -232,6 +246,11 @@ service cloud.firestore {
              isOptStr(data, 'photoUrl', 500) &&
              (!('documents' in data) || (data.documents is list && data.documents.size() <= 25 && (data.documents.size() == 0 || data.documents[0] is string))) &&
              (!('achievements' in data) || (data.achievements is list && data.achievements.size() <= 50 && (data.achievements.size() == 0 || data.achievements[0] is string))) &&
+             (!('staffRole' in data) || data.staffRole in ['teacher', 'staff', 'principal', 'department_supervisor', 'hr']) &&
+             isOptStr(data, 'loginId', 60) &&
+             isOptStr(data, 'passwordHash', 128) &&
+             (!('passwordProtected' in data) || data.passwordProtected is bool) &&
+             (!('moduleAccess' in data) || isValidModuleAccess(data.moduleAccess)) &&
              isValidId(data.createdBy);
     }
 
@@ -504,13 +523,14 @@ service cloud.firestore {
 
     function isValidSystemConfig(data) {
       return data.keys().hasAll(['configType', 'updatedBy', 'updatedAt']) &&
-             data.keys().hasOnly(['configType', 'institutionName', 'receiptPrefix', 'defaultCurrency', 'academicYear', 'lastBackupAt', 'updatedBy', 'updatedAt']) &&
+             data.keys().hasOnly(['configType', 'institutionName', 'receiptPrefix', 'defaultCurrency', 'academicYear', 'lastBackupAt', 'adminPinHash', 'updatedBy', 'updatedAt']) &&
              data.configType in ['master', 'eraseed', 'backup'] &&
              isOptStr(data, 'institutionName', 120) &&
              isOptStr(data, 'receiptPrefix', 20) &&
              isOptStr(data, 'defaultCurrency', 12) &&
              isOptStr(data, 'academicYear', 40) &&
              isOptStr(data, 'lastBackupAt', 40) &&
+             isOptStr(data, 'adminPinHash', 128) &&
              isValidId(data.updatedBy) &&
              validUpdateTimestamp(data);
     }
@@ -594,7 +614,7 @@ service cloud.firestore {
       allow list: if isInstitutionalStaff() && resource.data.dayOfWeek in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       allow create: if isValidId(timetableId) && (isHR() || isPrincipal() || isTeacher()) && isValidTimetable(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/classes/$(incoming().classId));
       allow update: if isValidId(timetableId) && (isHR() || isPrincipal() || (isTeacher() && existing().createdBy == request.auth.uid)) && isValidTimetable(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
-      allow delete: if isValidId(timetableId) && (isSuperAdmin() || isHR());
+      allow delete: if isValidId(timetableId) && (isSuperAdmin() || isHR() || (isTeacher() && existing().createdBy == request.auth.uid));
     }
 
     // 8. Employees (PII isolated)
@@ -750,7 +770,7 @@ service cloud.firestore {
       allow list: if isInstitutionalStaff() && resource.data.recordType in ['homework', 'exam', 'mark', 'progress'];
       allow create: if isValidId(itemId) && (isTeacher() || isPrincipal() || isHR()) && isValidAcademicRecord(incoming()) && validCreateTimestamps(incoming()) && incoming().teacherUid == request.auth.uid;
       allow update: if isValidId(itemId) && isValidAcademicRecord(incoming()) && validUpdateTimestamp(incoming()) && incoming().teacherUid == existing().teacherUid && incoming().createdAt == existing().createdAt && (isSuperAdmin() || isHR() || existing().teacherUid == request.auth.uid);
-      allow delete: if isValidId(itemId) && (isSuperAdmin() || isHR());
+      allow delete: if isValidId(itemId) && (isSuperAdmin() || isHR() || (isTeacher() && existing().teacherUid == request.auth.uid));
     }
 
     // 18. Department Cases, Library, Courses & Projects
@@ -775,7 +795,7 @@ service cloud.firestore {
     match /finance_ledger/{entryId} {
       allow get: if isValidId(entryId) && isInstitutionalStaff();
       allow list: if isInstitutionalStaff() && resource.data.entryType in ['account', 'income', 'expense', 'budget', 'fee', 'asset'];
-      allow create: if isValidId(entryId) && (isHR() || isPrincipal() || hasRole('staff')) && isValidFinanceEntry(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/branches/$(incoming().branchId));
+      allow create: if isValidId(entryId) && (isHR() || isPrincipal() || hasRole('staff') || isTeacher()) && isValidFinanceEntry(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/branches/$(incoming().branchId));
       allow update: if isValidId(entryId) && (isSuperAdmin() || isHR()) && isValidFinanceEntry(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (isSuperAdmin() || existing().status != 'cancelled');
       allow delete: if isValidId(entryId) && isSuperAdmin();
     }

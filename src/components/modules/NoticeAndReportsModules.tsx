@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Megaphone } from 'lucide-react';
+import { Megaphone, Trash2 } from 'lucide-react';
 import { useCMO } from '../../context/CMOContext';
 import { formatCounter, formatCurrency } from '../../types';
 import { exportToCsv, makeSafeId, sanitizeStr } from '../../utils/validation';
@@ -19,9 +19,11 @@ export function NoticeBoardModule() {
     isSuperAdmin,
     createRecord,
     updateRecord,
+    deleteRecord,
     notify,
   } = useCMO();
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState('');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState<'All Staff' | 'Teachers' | 'HR & Principals' | 'Department Specific'>('All Staff');
@@ -30,6 +32,33 @@ export function NoticeBoardModule() {
   const [departmentId, setDepartmentId] = useState('');
 
   const canPublish = isHR || isPrincipal || isTeacher || isDeptSupervisor || isSuperAdmin;
+
+  const handleArchiveNotice = async (id: string) => {
+    try {
+      await updateRecord('notices', id, { status: 'archived' }, {
+        action: 'Archived Notice',
+        module: 'Notice Board',
+        details: `Archived notice ${id}`,
+      });
+      notify('Notice archived.', 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to archive notice.', 'error');
+    }
+  };
+
+  const handleDeleteNotice = async (id: string) => {
+    try {
+      await deleteRecord('notices', id, {
+        action: 'Deleted Notice',
+        module: 'Notice Board',
+        details: `Deleted notice ${id}`,
+      });
+      setConfirmDeleteId('');
+      notify('Notice deleted permanently.', 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to delete notice.', 'error');
+    }
+  };
 
   const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,14 +223,29 @@ export function NoticeBoardModule() {
                   </div>
                 </div>
                 <p className="mt-3 text-sm text-slate-700 whitespace-pre-wrap">{n.body}</p>
-                {(isHR || isSuperAdmin) && n.status === 'published' && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 text-right">
-                    <button
-                      onClick={() => updateRecord('notices', n.id, { status: 'archived' })}
-                      className="text-xs text-slate-500 hover:text-slate-800"
-                    >
-                      Archive Notice
-                    </button>
+                {(isHR || isSuperAdmin) && (
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+                    {n.status === 'published' && (
+                      <button
+                        onClick={() => handleArchiveNotice(n.id)}
+                        className="text-xs text-slate-500 hover:text-slate-800"
+                      >
+                        Archive Notice
+                      </button>
+                    )}
+                    {confirmDeleteId === n.id ? (
+                      <>
+                        <button onClick={() => handleDeleteNotice(n.id)} className="px-2 py-0.5 text-xs bg-red-600 text-white rounded">Confirm Delete</button>
+                        <button onClick={() => setConfirmDeleteId('')} className="px-2 py-0.5 text-xs border border-slate-200 rounded">Cancel</button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteId(n.id)}
+                        className="inline-flex items-center gap-1 text-xs text-red-700 hover:underline"
+                      >
+                        <Trash2 className="w-3 h-3" /> Delete
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -225,7 +269,6 @@ export function ReportsAnalyticsModule() {
     payrollRecords,
     eraseedReceipts,
     financeLedger,
-    departmentCases,
   } = useCMO();
 
   const totalERaseed = eraseedReceipts
@@ -303,7 +346,7 @@ export function ReportsAnalyticsModule() {
                   <th className="py-2.5 px-4 text-right">Employees</th>
                   <th className="py-2.5 px-4 text-right">Students</th>
                   <th className="py-2.5 px-4 text-right">Admissions</th>
-                  <th className="py-2.5 px-4 text-right">Dept Cases</th>
+                  <th className="py-2.5 px-4 text-right">Att. Logs</th>
                   <th className="py-2.5 px-4 text-right">E-Raseed</th>
                 </tr>
               </thead>
@@ -322,7 +365,10 @@ export function ReportsAnalyticsModule() {
                       {formatCounter(admissions.filter((a) => a.branchId === b.id).length)}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono tabular-nums">
-                      {formatCounter(departmentCases.filter((c) => c.branchId === b.id).length)}
+                      {formatCounter(
+                        studentAttendance.filter((a) => a.branchId === b.id).length +
+                          employeeAttendance.filter((a) => a.branchId === b.id).length
+                      )}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono tabular-nums">
                       {formatCurrency(

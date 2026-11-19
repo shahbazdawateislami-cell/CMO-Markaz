@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Clock, Database, LockOpen, ShieldCheck } from 'lucide-react';
-import { AUTH_LOCK_ENABLED, useCMO } from '../../context/CMOContext';
+import React, { useEffect, useState } from 'react';
+import { Clock, Database, KeyRound, LockOpen, ShieldCheck, Trash2 } from 'lucide-react';
+import { useCMO } from '../../context/CMOContext';
 import { formatCounter, ModuleKey } from '../../types';
 import { makeSafeId, sanitizeStr } from '../../utils/validation';
 import { CounterStat, EmptyState, SectionHeader, StatusTag } from '../SharedUI';
@@ -14,7 +14,6 @@ type AdminTab =
 
 export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) => void }) {
   const {
-    firebaseUser,
     actorUid,
     divisions,
     branches,
@@ -30,30 +29,42 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
     financeLedger,
     eraseedReceipts,
     auditLogs,
+    systemConfigs,
     isSuperAdmin,
+    hasAdminPin,
+    saveAdminPin,
     createRecord,
     updateRecord,
+    deleteRecord,
     notify,
   } = useCMO();
 
   const [tab, setTab] = useState<AdminTab>('org_setup');
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState('');
+
+  // Admin PIN setup state
+  const [curPin, setCurPin] = useState('');
+  const [newPin, setNewPin] = useState('');
 
   // Division form
   const [divName, setDivName] = useState('');
   const [divCode, setDivCode] = useState('');
 
   // Branch form
+  const masterCfg = systemConfigs.find((c) => c.configType === 'master');
   const [brName, setBrName] = useState('');
   const [brCode, setBrCode] = useState('');
   const [brCity, setBrCity] = useState('');
-  const [brInst, setBrInst] = useState('Markazi CMO');
+  const [brInst, setBrInst] = useState(masterCfg?.institutionName || 'Markazi CMO');
   const [brDivId, setBrDivId] = useState('');
+
+  useEffect(() => {
+    if (masterCfg?.institutionName) setBrInst(masterCfg.institutionName);
+  }, [masterCfg?.institutionName]);
 
   // Department form
   const [deptName, setDeptName] = useState('');
-  const [deptType, setDeptType] = useState<
-    'madrasas' | 'qadri40' | 'darul_ifta' | 'darul_qaza' | 'darul_iqama' | 'tahreek_bedari' | 'other'
-  >('madrasas');
+  const [deptType, setDeptType] = useState<'madrasas' | 'qadri40' | 'other'>('madrasas');
 
   // Session form
   const [sessName, setSessName] = useState('');
@@ -76,7 +87,7 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
   const [closingTime, setClosingTime] = useState('17:00');
   const [graceMinutes, setGraceMinutes] = useState('15');
 
-  if ((AUTH_LOCK_ENABLED || firebaseUser) && !isSuperAdmin) {
+  if (!isSuperAdmin) {
     return (
       <EmptyState
         title="Super Admin Final Authority Required"
@@ -84,6 +95,41 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
       />
     );
   }
+
+  const handleToggleStatus = async (
+    col: string,
+    id: string,
+    currentStatus: string,
+    nextActive: string,
+    nextInactive: string,
+    label: string
+  ) => {
+    const next = currentStatus === nextActive ? nextInactive : nextActive;
+    try {
+      await updateRecord(col, id, { status: next }, {
+        action: `Toggled ${col} Status`,
+        module: 'Super Admin',
+        details: `${label} -> ${next}`,
+      });
+      notify(`${label} marked ${next}.`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Status update failed.', 'error');
+    }
+  };
+
+  const handleDeleteMaster = async (col: string, id: string, label: string) => {
+    try {
+      await deleteRecord(col, id, {
+        action: `Deleted ${col} Record`,
+        module: 'Super Admin',
+        details: `Deleted ${label} (${id})`,
+      });
+      setConfirmDeleteKey('');
+      notify(`Deleted ${label}.`, 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Delete failed.', 'error');
+    }
+  };
 
   const handleCreateDivision = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -358,13 +404,15 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
   };
 
   const handleFullBackup = () => {
+    const safeEmployees = employees.map(({ passwordHash: _pw, ...rest }) => rest);
     const backup = {
       exportedAt: new Date().toISOString(),
       divisions,
       branches,
       departments,
       sessions,
-      employees,
+      classes,
+      employees: safeEmployees,
       students,
       admissions,
       employeeAttendance,
@@ -380,7 +428,7 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
     a.download = `markazi_cmo_super_admin_backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    notify('Complete Super Admin JSON backup downloaded.', 'success');
+    notify('Complete Super Admin JSON backup downloaded (password hashes excluded).', 'success');
   };
 
   return (
@@ -433,11 +481,32 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
             </div>
             <button type="submit" className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-800 rounded-lg">Add Division</button>
             {divisions.length > 0 && (
-              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+              <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
                 {divisions.map((d) => (
-                  <div key={d.id} className="flex justify-between py-1">
-                    <span className="font-medium">{d.name}</span>
-                    <span className="font-mono text-slate-500">{d.code}</span>
+                  <div key={d.id} className="flex items-center justify-between gap-2 py-1">
+                    <span>
+                      <strong className="font-medium">{d.name}</strong>{' '}
+                      <span className="font-mono text-slate-500">({d.code})</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus('divisions', d.id, d.status, 'active', 'inactive', d.name)}
+                        className="px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      >
+                        {d.status}
+                      </button>
+                      {confirmDeleteKey === `div:${d.id}` ? (
+                        <>
+                          <button type="button" onClick={() => handleDeleteMaster('divisions', d.id, d.name)} className="px-2 py-0.5 bg-red-600 text-white rounded">Confirm</button>
+                          <button type="button" onClick={() => setConfirmDeleteKey('')} className="px-2 py-0.5 border border-slate-200 rounded">No</button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmDeleteKey(`div:${d.id}`)} className="p-1 text-red-700 hover:bg-red-50 rounded" aria-label="Delete division">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -459,11 +528,32 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
             </select>
             <button type="submit" className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-800 rounded-lg">Add Branch</button>
             {branches.length > 0 && (
-              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+              <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
                 {branches.map((b) => (
-                  <div key={b.id} className="flex justify-between py-1">
-                    <span className="font-medium">{b.name} ({b.city})</span>
-                    <span className="font-mono text-slate-500">{b.code}</span>
+                  <div key={b.id} className="flex items-center justify-between gap-2 py-1">
+                    <span>
+                      <strong className="font-medium">{b.name} ({b.city})</strong>{' '}
+                      <span className="font-mono text-slate-500">{b.code}</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus('branches', b.id, b.status, 'active', 'inactive', b.name)}
+                        className="px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      >
+                        {b.status}
+                      </button>
+                      {confirmDeleteKey === `br:${b.id}` ? (
+                        <>
+                          <button type="button" onClick={() => handleDeleteMaster('branches', b.id, b.name)} className="px-2 py-0.5 bg-red-600 text-white rounded">Confirm</button>
+                          <button type="button" onClick={() => setConfirmDeleteKey('')} className="px-2 py-0.5 border border-slate-200 rounded">No</button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmDeleteKey(`br:${b.id}`)} className="p-1 text-red-700 hover:bg-red-50 rounded" aria-label="Delete branch">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -478,20 +568,34 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
               <select value={deptType} onChange={(e) => setDeptType(e.target.value as typeof deptType)} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
                 <option value="madrasas">Madrasas</option>
                 <option value="qadri40">QADRI 40</option>
-                <option value="darul_ifta">Darul Ifta</option>
-                <option value="darul_qaza">Dar-ul-Qaza</option>
-                <option value="darul_iqama">Darul Iqama</option>
-                <option value="tahreek_bedari">Tahreek-e-Bedari</option>
                 <option value="other">Other</option>
               </select>
             </div>
             <button type="submit" className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-800 rounded-lg">Add Department</button>
             {departments.length > 0 && (
-              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+              <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
                 {departments.map((d) => (
-                  <div key={d.id} className="flex justify-between py-1">
-                    <span className="font-medium">{d.name}</span>
-                    <StatusTag status={d.type} />
+                  <div key={d.id} className="flex items-center justify-between gap-2 py-1">
+                    <span className="font-medium">{d.name} <span className="text-slate-400 font-mono">({d.type})</span></span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus('departments', d.id, d.status, 'active', 'inactive', d.name)}
+                        className="px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      >
+                        {d.status}
+                      </button>
+                      {confirmDeleteKey === `dept:${d.id}` ? (
+                        <>
+                          <button type="button" onClick={() => handleDeleteMaster('departments', d.id, d.name)} className="px-2 py-0.5 bg-red-600 text-white rounded">Confirm</button>
+                          <button type="button" onClick={() => setConfirmDeleteKey('')} className="px-2 py-0.5 border border-slate-200 rounded">No</button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmDeleteKey(`dept:${d.id}`)} className="p-1 text-red-700 hover:bg-red-50 rounded" aria-label="Delete department">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -508,11 +612,32 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
             </div>
             <button type="submit" className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-800 rounded-lg">Add Session</button>
             {sessions.length > 0 && (
-              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+              <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
                 {sessions.map((s) => (
-                  <div key={s.id} className="flex justify-between py-1">
-                    <span className="font-medium">{s.name}</span>
-                    <span className="font-mono text-slate-500">{s.startDate} to {s.endDate}</span>
+                  <div key={s.id} className="flex items-center justify-between gap-2 py-1">
+                    <span>
+                      <strong className="font-medium">{s.name}</strong>{' '}
+                      <span className="font-mono text-slate-500">({s.startDate} to {s.endDate})</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus('academic_sessions', s.id, s.status, 'active', 'archived', s.name)}
+                        className="px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      >
+                        {s.status}
+                      </button>
+                      {confirmDeleteKey === `sess:${s.id}` ? (
+                        <>
+                          <button type="button" onClick={() => handleDeleteMaster('academic_sessions', s.id, s.name)} className="px-2 py-0.5 bg-red-600 text-white rounded">Confirm</button>
+                          <button type="button" onClick={() => setConfirmDeleteKey('')} className="px-2 py-0.5 border border-slate-200 rounded">No</button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmDeleteKey(`sess:${s.id}`)} className="p-1 text-red-700 hover:bg-red-50 rounded" aria-label="Delete session">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -525,7 +650,7 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Program</label>
-                <select value={clsProgram} onChange={(e) => setClsProgram(e.target.value as any)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
+                <select value={clsProgram} onChange={(e) => setClsProgram(e.target.value as 'madrasa' | 'qadri40')} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
                   <option value="madrasa">Madrasa</option>
                   <option value="qadri40">QADRI 40</option>
                 </select>
@@ -564,11 +689,33 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
             </div>
             <button type="submit" className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-800 rounded-lg">Add Class / Section</button>
             {classes.length > 0 && (
-              <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
+              <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
                 {classes.map((c) => (
-                  <div key={c.id} className="flex justify-between py-1">
-                    <span className="font-medium">{c.className} {c.sectionName ? `(${c.sectionName})` : ''} · <span className="uppercase text-slate-500">{c.programType}</span></span>
-                    <span className="font-mono text-slate-500">{branches.find((b) => b.id === c.branchId)?.name || 'Branch'}</span>
+                  <div key={c.id} className="flex items-center justify-between gap-2 py-1">
+                    <span>
+                      <strong className="font-medium">{c.className} {c.sectionName ? `(${c.sectionName})` : ''}</strong> ·{' '}
+                      <span className="uppercase text-slate-500">{c.programType}</span> ·{' '}
+                      <span className="font-mono text-slate-500">{branches.find((b) => b.id === c.branchId)?.name || 'Branch'}</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus('classes', c.id, c.status, 'active', 'inactive', c.className)}
+                        className="px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      >
+                        {c.status}
+                      </button>
+                      {confirmDeleteKey === `cls:${c.id}` ? (
+                        <>
+                          <button type="button" onClick={() => handleDeleteMaster('classes', c.id, c.className)} className="px-2 py-0.5 bg-red-600 text-white rounded">Confirm</button>
+                          <button type="button" onClick={() => setConfirmDeleteKey('')} className="px-2 py-0.5 border border-slate-200 rounded">No</button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmDeleteKey(`cls:${c.id}`)} className="p-1 text-red-700 hover:bg-red-50 rounded" aria-label="Delete class">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -668,7 +815,7 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
                         <td className="py-2.5 px-4">
                           <StatusTag status={t.isLocked ? 'Locked' : 'Open'} tone={t.isLocked ? 'red' : 'emerald'} />
                         </td>
-                        <td className="py-2.5 px-4 text-right space-x-2">
+                        <td className="py-2.5 px-4 text-right space-x-1.5 whitespace-nowrap">
                           <button
                             onClick={() => handleReopenAttendancePolicy(t.id)}
                             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-emerald-800 rounded-md"
@@ -681,6 +828,16 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
                           >
                             {t.isLocked ? 'Unlock' : 'Lock'}
                           </button>
+                          {confirmDeleteKey === `tim:${t.id}` ? (
+                            <>
+                              <button onClick={() => handleDeleteMaster('attendance_timings', t.id, t.scopeLabel || t.scopeId)} className="px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md">Confirm</button>
+                              <button onClick={() => setConfirmDeleteKey('')} className="px-2 py-1 text-xs border border-slate-200 rounded-md">No</button>
+                            </>
+                          ) : (
+                            <button onClick={() => setConfirmDeleteKey(`tim:${t.id}`)} className="p-1 text-red-700 hover:bg-red-50 rounded-md" aria-label="Delete policy">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -738,20 +895,65 @@ export function SuperAdminModule({ onNavigate }: { onNavigate: (m: ModuleKey) =>
       )}
 
       {tab === 'backup_recovery' && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-emerald-800" />
-            <h3 className="text-base font-semibold text-slate-900">Full Institutional Backup &amp; Recovery</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-emerald-800" />
+              <h3 className="text-base font-semibold text-slate-900">Full Institutional Backup &amp; Recovery</h3>
+            </div>
+            <p className="text-sm text-slate-600">
+              Export an authoritative JSON archive of every Markazi CMO Firestore collection including historical attendance, admissions, finance, E-Raseed, and audit logs.
+            </p>
+            <button
+              onClick={handleFullBackup}
+              className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg"
+            >
+              Download Complete CMO Backup
+            </button>
           </div>
-          <p className="text-sm text-slate-600">
-            Export an authoritative JSON archive of every Markazi CMO Firestore collection including historical attendance, admissions, finance, E-Raseed, and audit logs.
-          </p>
-          <button
-            onClick={handleFullBackup}
-            className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg"
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const res = await saveAdminPin(newPin, hasAdminPin ? curPin : undefined);
+              if (!res.ok) {
+                notify(res.error || 'Failed to save Admin Security PIN.', 'error');
+                return;
+              }
+              setCurPin('');
+              setNewPin('');
+              notify(
+                newPin.trim()
+                  ? 'Master Admin Security PIN saved.'
+                  : 'Master Admin Security PIN cleared.',
+                'success'
+              );
+            }}
+            className="bg-white border border-slate-200 rounded-xl p-6 space-y-4"
           >
-            Download Complete CMO Backup
-          </button>
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-emerald-800" />
+              <h3 className="text-base font-semibold text-slate-900">
+                Admin Terminal Security PIN ({hasAdminPin ? 'Enabled' : 'Not Set'})
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500">
+              Set a Master Admin PIN to lock Super Admin &amp; HR modules on shared client terminals.
+            </p>
+            {hasAdminPin && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Current Admin PIN</label>
+                <input type="password" required value={curPin} onChange={(e) => setCurPin(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono" />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">New Admin PIN (min 4 chars)</label>
+              <input type="password" placeholder={hasAdminPin ? 'New PIN or blank to remove' : 'Min 4 characters'} value={newPin} onChange={(e) => setNewPin(e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono" />
+            </div>
+            <button type="submit" className="px-4 py-2 text-xs font-medium text-white bg-emerald-800 hover:bg-emerald-900 rounded-lg">
+              {hasAdminPin ? 'Update Admin PIN' : 'Enable Admin PIN Lock'}
+            </button>
+          </form>
         </div>
       )}
     </div>

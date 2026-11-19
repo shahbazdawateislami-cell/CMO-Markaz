@@ -154,6 +154,18 @@ export interface TimetableEntry {
   updatedAt?: unknown;
 }
 
+export interface EmployeeModuleAccess {
+  ess: boolean;
+  erp: boolean;
+  e_raseed: boolean;
+  teacher_management?: boolean;
+  madrasas?: boolean;
+  qadri_40?: boolean;
+  online_admission?: boolean;
+  notice_board?: boolean;
+  reports_analytics?: boolean;
+}
+
 export interface Employee {
   id: string;
   employeeCode: string;
@@ -174,6 +186,11 @@ export interface Employee {
   photoUrl?: string;
   documents?: string[];
   achievements?: string[];
+  staffRole?: 'teacher' | 'staff' | 'principal' | 'department_supervisor' | 'hr';
+  loginId?: string;
+  passwordHash?: string;
+  passwordProtected?: boolean;
+  moduleAccess?: EmployeeModuleAccess;
   createdBy: string;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -476,6 +493,7 @@ export interface SystemConfig {
   defaultCurrency?: string;
   academicYear?: string;
   lastBackupAt?: string;
+  adminPinHash?: string;
   updatedBy: string;
   updatedAt?: unknown;
 }
@@ -487,5 +505,5 @@ export function formatCounter(value: number): string {
 
 export function formatCurrency(amount: number, currency = 'INR'): string {
   const safe = Number.isFinite(amount) ? amount : 0;
-  return `${currency} ${safe.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  return `${currency} ${safe.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }

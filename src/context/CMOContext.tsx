@@ -45,6 +45,7 @@ import {
   ExpenseClaim,
   FinanceEntry,
   LeaveRequest,
+  ModuleKey,
   Notice,
   PayrollRecord,
   Student,
@@ -53,12 +54,15 @@ import {
   TimetableEntry,
   UserProfile,
 } from '../types';
+import { hashCredential, verifyCredential } from '../utils/authHash';
 import { makeSafeId } from '../utils/validation';
 
 // Toggle to true whenever the Sign-In lock screen should be re-enabled
 export const AUTH_LOCK_ENABLED = false;
 
 const OPEN_STORAGE_PREFIX = 'markazi_cmo_open_v1_';
+const STAFF_SESSION_KEY = 'markazi_cmo_staff_session_v1';
+const ADMIN_UNLOCK_KEY = 'markazi_cmo_admin_unlock_v1';
 
 interface ToastMessage {
   id: string;
@@ -77,7 +81,25 @@ interface CMOContextValue {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 
+  // Staff / Teacher ID & Password Session + Admin PIN Lock
+  staffSessionEmployee: Employee | null;
+  isStaffSessionActive: boolean;
+  hasAdminPin: boolean;
+  isAdminUnlocked: boolean;
+  hasProtectedEmployees: boolean;
+  loginWithStaffCredentials: (
+    loginId: string,
+    password: string
+  ) => { ok: boolean; error?: string; employee?: Employee };
+  logoutStaffSession: () => void;
+  unlockAdminWithPin: (pin: string) => { ok: boolean; error?: string };
+  lockAdminSession: () => void;
+  saveAdminPin: (newPin: string, currentPin?: string) => Promise<{ ok: boolean; error?: string }>;
+  hasModuleAccess: (mod: ModuleKey) => boolean;
+  needsModuleCredentialGate: (mod: ModuleKey) => boolean;
+
   // Role helpers
+  effectiveRole: string;
   isSuperAdmin: boolean;
   isHR: boolean;
   isPrincipal: boolean;
@@ -243,6 +265,21 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [systemConfigs, setSystemConfigs] = useState<SystemConfig[]>([]);
 
+  const [staffSessionEmployeeId, setStaffSessionEmployeeId] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem(STAFF_SESSION_KEY) || localStorage.getItem(STAFF_SESSION_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [adminPinUnlocked, setAdminPinUnlocked] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(ADMIN_UNLOCK_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const notify = useCallback((text: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = makeSafeId('toast');
     setToasts((prev) => [...prev.slice(-3), { id, type, text }]);
@@ -330,27 +367,100 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
     Boolean(firebaseUser?.emailVerified) &&
     firebaseUser?.email === BOOTSTRAPPED_SUPER_ADMIN_EMAIL;
 
-  const effectiveRole = isOpenMode
-    ? 'super_admin'
-    : isBootstrappedOwner
-      ? 'super_admin'
-      : userProfile?.role || 'pending';
+  const staffSessionEmployee = React.useMemo(
+    () => employees.find((e) => e.id === staffSessionEmployeeId) || null,
+    [employees, staffSessionEmployeeId]
+  );
+
+  // Auto-clear terminated/resigned/missing staff session once employees list has loaded
+  useEffect(() => {
+    if (!staffSessionEmployeeId) return;
+    if (employees.length === 0) return;
+    const found = employees.find((e) => e.id === staffSessionEmployeeId);
+    if (!found || found.employmentStatus === 'terminated' || found.employmentStatus === 'resigned') {
+      setStaffSessionEmployeeId('');
+      try {
+        sessionStorage.removeItem(STAFF_SESSION_KEY);
+        localStorage.removeItem(STAFF_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, [employees, staffSessionEmployeeId]);
+
+  const masterConfig = systemConfigs.find((c) => c.configType === 'master');
+  const adminPinHash = masterConfig?.adminPinHash || '';
+  const hasAdminPin = Boolean(adminPinHash);
+
+  // Admin unlock state: true if Firebase SuperAdmin/HR, or unlocked with Admin PIN, or Open Mode with no PIN & no active Staff Session
+  const isAdminUnlocked =
+    Boolean(staffSessionEmployee)
+      ? false
+      : firebaseUser
+        ? isBootstrappedOwner || userProfile?.role === 'super_admin' || userProfile?.role === 'hr'
+        : !hasAdminPin || adminPinUnlocked;
+
+  const hasProtectedEmployees = React.useMemo(
+    () =>
+      employees.some(
+        (e) =>
+          e.passwordProtected !== false &&
+          Boolean(e.passwordHash) &&
+          e.employmentStatus !== 'terminated' &&
+          e.employmentStatus !== 'resigned'
+      ),
+    [employees]
+  );
+
+  const isStaffSessionActive = Boolean(staffSessionEmployee);
+
+  // STRICT ROLE RESOLUTION: Staff/Teacher credential session ALWAYS overrides Open Mode privileges!
+  const effectiveRole = staffSessionEmployee
+    ? staffSessionEmployee.staffRole || 'teacher'
+    : firebaseUser
+      ? isBootstrappedOwner
+        ? 'super_admin'
+        : userProfile?.role || 'pending'
+      : isOpenMode
+        ? hasAdminPin && !adminPinUnlocked
+          ? 'teacher'
+          : 'super_admin'
+        : 'pending';
 
   const isSuperAdmin =
-    isOpenMode ||
-    (effectiveRole === 'super_admin' && (isBootstrappedOwner || userProfile?.status === 'active'));
+    !isStaffSessionActive &&
+    (firebaseUser
+      ? effectiveRole === 'super_admin' && (isBootstrappedOwner || userProfile?.status === 'active')
+      : isOpenMode && (!hasAdminPin || adminPinUnlocked));
+
   const isHR =
-    isOpenMode || isSuperAdmin || (effectiveRole === 'hr' && userProfile?.status === 'active');
-  const isPrincipal =
-    isOpenMode ||
     isSuperAdmin ||
-    (effectiveRole === 'principal' && userProfile?.status === 'active');
+    (staffSessionEmployee
+      ? effectiveRole === 'hr'
+      : Boolean(firebaseUser && effectiveRole === 'hr' && userProfile?.status === 'active'));
+
+  const isPrincipal =
+    isSuperAdmin ||
+    (staffSessionEmployee
+      ? effectiveRole === 'principal'
+      : Boolean(firebaseUser && effectiveRole === 'principal' && userProfile?.status === 'active'));
+
   const isTeacher =
-    isOpenMode || (effectiveRole === 'teacher' && userProfile?.status === 'active');
+    staffSessionEmployee
+      ? effectiveRole === 'teacher'
+      : firebaseUser
+        ? effectiveRole === 'teacher' && userProfile?.status === 'active'
+        : isSuperAdmin || effectiveRole === 'teacher';
+
   const isDeptSupervisor =
-    isOpenMode ||
-    (effectiveRole === 'department_supervisor' && userProfile?.status === 'active');
+    staffSessionEmployee
+      ? effectiveRole === 'department_supervisor'
+      : firebaseUser
+        ? effectiveRole === 'department_supervisor' && userProfile?.status === 'active'
+        : isSuperAdmin;
+
   const isActiveStaff =
+    isStaffSessionActive ||
     isOpenMode ||
     isSuperAdmin ||
     (Boolean(userProfile) &&
@@ -359,8 +469,13 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         userProfile.role
       ));
 
-  const actorUid = firebaseUser?.uid || (isOpenMode ? 'open_admin' : '');
+  const actorUid =
+    staffSessionEmployee?.uid ||
+    staffSessionEmployee?.id ||
+    firebaseUser?.uid ||
+    (isOpenMode ? 'open_admin' : '');
   const actorName =
+    staffSessionEmployee?.fullName ||
     userProfile?.displayName ||
     firebaseUser?.email ||
     (isOpenMode ? 'Super Admin (Open Workspace)' : 'Staff');
@@ -534,18 +649,6 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
     ]);
     subscribe<AcademicRecord>('academics', setAcademics, [
       where('recordType', 'in', ['homework', 'exam', 'mark', 'progress']),
-    ]);
-    subscribe<DepartmentCase>('department_cases', setDepartmentCases, [
-      where('moduleType', 'in', [
-        'darul_ifta',
-        'darul_qaza',
-        'darul_iqama',
-        'tahreek_bedari',
-        'digital_library',
-        'online_courses',
-        'project_existing',
-        'project_upcoming',
-      ]),
     ]);
     subscribe<ERaseedReceipt>('eraseed_receipts', setEraseedReceipts, [
       where('receiptType', 'in', ['Receipt', 'Donation', 'Deposit']),
@@ -926,6 +1029,189 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
     [firebaseUser, isOpenMode]
   );
 
+  const loginWithStaffCredentials = useCallback(
+    (loginIdInput: string, passwordInput: string) => {
+      const normalized = loginIdInput.trim().toLowerCase();
+      if (!normalized || !passwordInput.trim()) {
+        return { ok: false, error: 'Enter both Login ID and Password.' };
+      }
+      const match = employees.find(
+        (e) =>
+          (e.loginId || '').trim().toLowerCase() === normalized ||
+          e.employeeCode.trim().toLowerCase() === normalized
+      );
+      if (!match) {
+        return { ok: false, error: 'No Employee or Teacher found with that Login ID.' };
+      }
+      if (match.employmentStatus === 'terminated' || match.employmentStatus === 'resigned') {
+        return { ok: false, error: `Account is marked ${match.employmentStatus}. Contact HR.` };
+      }
+      if (!match.passwordHash) {
+        return {
+          ok: false,
+          error: 'No login password has been set for this ID yet. Contact HR to set a password.',
+        };
+      }
+      if (!verifyCredential(passwordInput, match.passwordHash)) {
+        return { ok: false, error: 'Incorrect Password for this Employee/Teacher ID.' };
+      }
+      setStaffSessionEmployeeId(match.id);
+      setAdminPinUnlocked(false);
+      try {
+        sessionStorage.setItem(STAFF_SESSION_KEY, match.id);
+        localStorage.setItem(STAFF_SESSION_KEY, match.id);
+        sessionStorage.removeItem(ADMIN_UNLOCK_KEY);
+      } catch {
+        // ignore storage errors
+      }
+      return { ok: true, employee: match };
+    },
+    [employees]
+  );
+
+  const logoutStaffSession = useCallback(() => {
+    setStaffSessionEmployeeId('');
+    try {
+      sessionStorage.removeItem(STAFF_SESSION_KEY);
+      localStorage.removeItem(STAFF_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const unlockAdminWithPin = useCallback(
+    (pin: string) => {
+      if (!adminPinHash) {
+        setAdminPinUnlocked(true);
+        logoutStaffSession();
+        return { ok: true };
+      }
+      if (!verifyCredential(pin, adminPinHash)) {
+        return { ok: false, error: 'Invalid Admin Security PIN.' };
+      }
+      logoutStaffSession();
+      setAdminPinUnlocked(true);
+      try {
+        sessionStorage.setItem(ADMIN_UNLOCK_KEY, 'true');
+      } catch {
+        // ignore
+      }
+      return { ok: true };
+    },
+    [adminPinHash, logoutStaffSession]
+  );
+
+  const lockAdminSession = useCallback(() => {
+    setAdminPinUnlocked(false);
+    try {
+      sessionStorage.removeItem(ADMIN_UNLOCK_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const saveAdminPin = useCallback(
+    async (newPin: string, currentPin?: string) => {
+      if (adminPinHash && currentPin !== undefined && !verifyCredential(currentPin, adminPinHash)) {
+        return { ok: false, error: 'Current Admin PIN is incorrect.' };
+      }
+      const trimmed = newPin.trim();
+      if (trimmed && trimmed.length < 4) {
+        return { ok: false, error: 'Admin PIN must be at least 4 characters.' };
+      }
+      const updater = actorUid || 'open_admin';
+      try {
+        await createRecord('system_config', 'master_config', {
+          configType: 'master',
+          institutionName: masterConfig?.institutionName || 'Markazi CMO',
+          academicYear: masterConfig?.academicYear || '2026-2027',
+          adminPinHash: trimmed ? hashCredential(trimmed) : '',
+          updatedBy: updater,
+        });
+        if (trimmed) {
+          setAdminPinUnlocked(true);
+          try {
+            sessionStorage.setItem(ADMIN_UNLOCK_KEY, 'true');
+          } catch {
+            // ignore
+          }
+        }
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Failed to save Admin Security PIN.',
+        };
+      }
+    },
+    [adminPinHash, actorUid, createRecord, masterConfig]
+  );
+
+  const hasModuleAccess = useCallback(
+    (mod: ModuleKey): boolean => {
+      if (mod === 'home') return true;
+      // Strict HR & Admin governance guard: NEVER accessible to teachers, clerks, or locked terminals
+      if (mod === 'super_admin_panel') return isSuperAdmin;
+      if (mod === 'hr_control_panel' || mod === 'hr_payroll') return isHR || isSuperAdmin;
+
+      // Active Staff/Teacher Credential Session checks explicit moduleAccess permissions
+      if (staffSessionEmployee) {
+        const ma = staffSessionEmployee.moduleAccess;
+        if (!ma) {
+          // Safe default if HR has not configured moduleAccess yet: ESS only
+          return (
+            mod === 'ess' ||
+            mod === 'notice_board' ||
+            (staffSessionEmployee.staffRole === 'teacher' && mod === 'teacher_management')
+          );
+        }
+        switch (mod) {
+          case 'ess':
+            return Boolean(ma.ess);
+          case 'erp':
+            return Boolean(ma.erp);
+          case 'e_raseed':
+            return Boolean(ma.e_raseed);
+          case 'teacher_management':
+            return ma.teacher_management ?? (staffSessionEmployee.staffRole === 'teacher');
+          case 'madrasas':
+            return ma.madrasas ?? true;
+          case 'qadri_40':
+            return ma.qadri_40 ?? true;
+          case 'online_admission':
+            return ma.online_admission ?? true;
+          case 'notice_board':
+            return ma.notice_board ?? true;
+          case 'reports_analytics':
+            return ma.reports_analytics ?? false;
+          default:
+            return false;
+        }
+      }
+
+      if (mod === 'teacher_management') {
+        return isTeacher || isPrincipal || isHR || isSuperAdmin;
+      }
+
+      return true;
+    },
+    [isSuperAdmin, isHR, isPrincipal, isTeacher, staffSessionEmployee]
+  );
+
+  const needsModuleCredentialGate = useCallback(
+    (mod: ModuleKey): boolean => {
+      if (!['ess', 'erp', 'e_raseed'].includes(mod)) return false;
+      // If a staff/teacher session is already logged in, credential gate is satisfied
+      if (staffSessionEmployee) return false;
+      // If Firebase Auth user is signed in AND their linked employee record has password protection, require verification once
+      if (hasProtectedEmployees && !adminPinUnlocked) {
+        return true;
+      }
+      return false;
+    },
+    [staffSessionEmployee, hasProtectedEmployees, adminPinUnlocked]
+  );
+
   return (
     <CMOContext.Provider
       value={{
@@ -938,6 +1224,19 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
         actorName,
         signInWithGoogle,
         signOut,
+        staffSessionEmployee,
+        isStaffSessionActive,
+        hasAdminPin,
+        isAdminUnlocked,
+        hasProtectedEmployees,
+        loginWithStaffCredentials,
+        logoutStaffSession,
+        unlockAdminWithPin,
+        lockAdminSession,
+        saveAdminPin,
+        hasModuleAccess,
+        needsModuleCredentialGate,
+        effectiveRole,
         isSuperAdmin,
         isHR,
         isPrincipal,

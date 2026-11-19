@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Landmark } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Edit3, Landmark, Trash2 } from 'lucide-react';
 import { useCMO } from '../../context/CMOContext';
 import { FinanceEntry, formatCounter, formatCurrency } from '../../types';
 import { exportToCsv, getTodayStr, makeSafeId, sanitizeStr } from '../../utils/validation';
@@ -23,17 +23,27 @@ export function ERPFinanceModule() {
     financeLedger,
     eraseedReceipts,
     payrollRecords,
+    systemConfigs,
+    staffSessionEmployee,
     isHR,
     isPrincipal,
     isSuperAdmin,
     createRecord,
     updateRecord,
+    deleteRecord,
     notify,
   } = useCMO();
 
+  const masterCfg = systemConfigs.find((c) => c.configType === 'master');
+
   const [tab, setTab] = useState<ERPTab>('all');
+  const [editingEntry, setEditingEntry] = useState<FinanceEntry | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState('');
+
   const [entryType, setEntryType] = useState<FinanceEntry['entryType']>('income');
-  const [institutionName, setInstitutionName] = useState('Markazi CMO');
+  const [institutionName, setInstitutionName] = useState(
+    masterCfg?.institutionName || 'Markazi CMO'
+  );
   const [branchId, setBranchId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [title, setTitle] = useState('');
@@ -43,49 +53,141 @@ export function ERPFinanceModule() {
   const [entryDate, setEntryDate] = useState(getTodayStr());
   const [notes, setNotes] = useState('');
 
-  const canWrite = isHR || isPrincipal || isSuperAdmin;
+  useEffect(() => {
+    if (!editingEntry && masterCfg?.institutionName) {
+      setInstitutionName(masterCfg.institutionName);
+    }
+  }, [masterCfg?.institutionName, editingEntry]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const canWrite =
+    isHR ||
+    isPrincipal ||
+    isSuperAdmin ||
+    Boolean(staffSessionEmployee?.moduleAccess?.erp);
+
+  const resetForm = () => {
+    setEditingEntry(null);
+    setEntryType('income');
+    setInstitutionName(masterCfg?.institutionName || 'Markazi CMO');
+    setBranchId('');
+    setDepartmentId('');
+    setTitle('');
+    setAccountCode('');
+    setCategory('');
+    setAmount('');
+    setEntryDate(getTodayStr());
+    setNotes('');
+  };
+
+  const startEdit = (f: FinanceEntry) => {
+    setEditingEntry(f);
+    setEntryType(f.entryType);
+    setInstitutionName(f.institutionName);
+    setBranchId(f.branchId);
+    setDepartmentId(f.departmentId || '');
+    setTitle(f.title);
+    setAccountCode(f.accountCode || '');
+    setCategory(f.category);
+    setAmount(String(f.amount));
+    setEntryDate(f.entryDate);
+    setNotes(f.notes || '');
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!actorUid || !canWrite) return;
     if (!branchId) {
       notify('Select a branch.', 'error');
       return;
     }
-    const id = makeSafeId('fin');
+    const cleanTitle = sanitizeStr(title, 160);
+    const numAmt = Math.max(0, Number(amount) || 0);
     try {
-      await createRecord(
-        'finance_ledger',
-        id,
-        {
-          entryType,
-          institutionName: sanitizeStr(institutionName, 120),
-          branchId,
-          departmentId: departmentId || '',
-          title: sanitizeStr(title, 160),
-          accountCode: sanitizeStr(accountCode, 40),
-          category: sanitizeStr(category, 100),
-          amount: Math.max(0, Number(amount) || 0),
-          fiscalMonth: entryDate.slice(0, 7),
-          entryDate,
-          status: 'posted',
-          notes: sanitizeStr(notes, 500),
-          createdBy: actorUid,
-        },
-        {
-          action: `Posted ERP ${entryType}`,
-          module: 'ERP & Finance',
-          details: `${sanitizeStr(title, 120)} · ${Number(amount) || 0}`,
-        }
-      );
-      setTitle('');
-      setAccountCode('');
-      setCategory('');
-      setAmount('');
-      setNotes('');
-      notify('Financial ledger entry posted.', 'success');
+      if (editingEntry) {
+        await updateRecord(
+          'finance_ledger',
+          editingEntry.id,
+          {
+            entryType,
+            institutionName: sanitizeStr(institutionName, 120),
+            branchId,
+            departmentId: departmentId || '',
+            title: cleanTitle,
+            accountCode: sanitizeStr(accountCode, 40),
+            category: sanitizeStr(category, 100),
+            amount: numAmt,
+            fiscalMonth: entryDate.slice(0, 7),
+            entryDate,
+            notes: sanitizeStr(notes, 500),
+          },
+          {
+            action: `Updated ERP ${entryType}`,
+            module: 'ERP & Finance',
+            details: `${cleanTitle} · ${numAmt}`,
+          }
+        );
+        notify('Financial ledger entry updated.', 'success');
+      } else {
+        const id = makeSafeId('fin');
+        await createRecord(
+          'finance_ledger',
+          id,
+          {
+            entryType,
+            institutionName: sanitizeStr(institutionName, 120),
+            branchId,
+            departmentId: departmentId || '',
+            title: cleanTitle,
+            accountCode: sanitizeStr(accountCode, 40),
+            category: sanitizeStr(category, 100),
+            amount: numAmt,
+            fiscalMonth: entryDate.slice(0, 7),
+            entryDate,
+            status: 'posted',
+            notes: sanitizeStr(notes, 500),
+            createdBy: actorUid,
+          },
+          {
+            action: `Posted ERP ${entryType}`,
+            module: 'ERP & Finance',
+            details: `${cleanTitle} · ${numAmt}`,
+          }
+        );
+        notify('Financial ledger entry posted.', 'success');
+      }
+      resetForm();
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Failed to post entry.', 'error');
+      notify(err instanceof Error ? err.message : 'Failed to save entry.', 'error');
+    }
+  };
+
+  const handleVoidEntry = async (f: FinanceEntry) => {
+    try {
+      await updateRecord(
+        'finance_ledger',
+        f.id,
+        { status: 'cancelled' },
+        { action: 'Voided ERP Entry', module: 'ERP & Finance', details: `${f.title} (${f.amount})` }
+      );
+      notify(`Entry "${f.title}" voided.`, 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to void entry.', 'error');
+    }
+  };
+
+  const handleDeleteEntry = async (f: FinanceEntry) => {
+    if (!isSuperAdmin) return;
+    try {
+      await deleteRecord('finance_ledger', f.id, {
+        action: 'Deleted ERP Entry',
+        module: 'ERP & Finance',
+        details: `Deleted ${f.title}`,
+      });
+      setConfirmDeleteId('');
+      if (editingEntry?.id === f.id) resetForm();
+      notify(`Entry "${f.title}" deleted.`, 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Delete failed.', 'error');
     }
   };
 
@@ -235,12 +337,21 @@ export function ERPFinanceModule() {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <form
-            onSubmit={handleCreate}
+            onSubmit={handleSave}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-4"
           >
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Landmark className="w-4 h-4 text-emerald-800" />
-              <h3 className="text-base font-semibold text-slate-900">Record ERP Entry</h3>
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Landmark className="w-4 h-4 text-emerald-800" />
+                <h3 className="text-base font-semibold text-slate-900">
+                  {editingEntry ? 'Edit ERP Entry' : 'Record ERP Entry'}
+                </h3>
+              </div>
+              {editingEntry && (
+                <button type="button" onClick={resetForm} className="text-xs text-slate-500 hover:text-slate-900">
+                  Cancel
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -385,7 +496,7 @@ export function ERPFinanceModule() {
               disabled={!canWrite}
               className="w-full py-2 text-sm font-medium text-white bg-emerald-800 hover:bg-emerald-900 disabled:bg-slate-300 rounded-lg"
             >
-              Post Financial Entry
+              {editingEntry ? 'Update Financial Entry' : 'Post Financial Entry'}
             </button>
           </form>
 
@@ -426,15 +537,48 @@ export function ERPFinanceModule() {
                           <td className="py-2.5 px-4">
                             <StatusTag status={f.status} />
                           </td>
-                          <td className="py-2.5 px-4 text-right">
+                          <td className="py-2.5 px-4 text-right space-x-2 whitespace-nowrap">
+                            {canWrite && f.status !== 'cancelled' && (
+                              <button
+                                onClick={() => startEdit(f)}
+                                className="inline-flex items-center gap-1 text-xs text-emerald-800 hover:underline"
+                              >
+                                <Edit3 className="w-3 h-3" /> Edit
+                              </button>
+                            )}
                             {(isHR || isSuperAdmin) && f.status !== 'cancelled' && (
                               <button
-                                onClick={() => updateRecord('finance_ledger', f.id, { status: 'cancelled' })}
-                                className="text-xs text-red-700 hover:underline"
+                                onClick={() => handleVoidEntry(f)}
+                                className="text-xs text-amber-700 hover:underline"
                               >
                                 Void
                               </button>
                             )}
+                            {isSuperAdmin &&
+                              (confirmDeleteId === f.id ? (
+                                <>
+                                  <button
+                                    onClick={() => handleDeleteEntry(f)}
+                                    className="px-2 py-0.5 text-xs text-white bg-red-600 rounded"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDeleteId('')}
+                                    className="px-2 py-0.5 text-xs border border-slate-200 rounded"
+                                  >
+                                    No
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmDeleteId(f.id)}
+                                  className="inline-flex items-center text-xs text-red-700 hover:underline"
+                                  aria-label="Delete entry"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              ))}
                           </td>
                         </tr>
                       ))}

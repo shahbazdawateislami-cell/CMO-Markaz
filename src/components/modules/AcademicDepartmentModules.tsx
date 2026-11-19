@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useCMO } from '../../context/CMOContext';
-import { formatCounter } from '../../types';
+import { AcademicClass, formatCounter } from '../../types';
 import { exportToCsv, makeSafeId, sanitizeStr } from '../../utils/validation';
 import { AvatarFrame, CounterStat, EmptyState, SectionHeader, StatusTag } from '../SharedUI';
 import { StudentAttendanceWorkspace } from './StudentAttendanceWorkspace';
@@ -27,10 +28,13 @@ export function AcademicDepartmentModule({
     isPrincipal,
     isSuperAdmin,
     createRecord,
+    updateRecord,
+    deleteRecord,
     notify,
   } = useCMO();
 
   const [tab, setTab] = useState<DeptTab>('attendance');
+  const [confirmDeleteClassId, setConfirmDeleteClassId] = useState('');
 
   // Class / Section / Course / Batch builder state
   const [divisionId, setDivisionId] = useState('');
@@ -115,6 +119,36 @@ export function AcademicDepartmentModule({
       notify('Class structure saved to central database.', 'success');
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Failed to create class.', 'error');
+    }
+  };
+
+  const handleToggleClassStatus = async (c: AcademicClass) => {
+    if (!(isHR || isPrincipal || isSuperAdmin)) return;
+    const next = c.status === 'active' ? 'inactive' : 'active';
+    try {
+      await updateRecord('classes', c.id, { status: next }, {
+        action: `Toggled ${deptTitle} Class Status`,
+        module: deptTitle,
+        details: `${c.className} -> ${next}`,
+      });
+      notify(`${c.className} marked ${next}.`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to update class status.', 'error');
+    }
+  };
+
+  const handleDeleteClass = async (c: AcademicClass) => {
+    if (!isSuperAdmin) return;
+    try {
+      await deleteRecord('classes', c.id, {
+        action: `Deleted ${deptTitle} Class`,
+        module: deptTitle,
+        details: `Deleted ${c.className}`,
+      });
+      setConfirmDeleteClassId('');
+      notify(`Deleted class ${c.className}.`, 'info');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to delete class.', 'error');
     }
   };
 
@@ -375,6 +409,7 @@ export function AcademicDepartmentModule({
                       <th className="py-2.5 px-4">Branch / Course</th>
                       <th className="py-2.5 px-4">Session</th>
                       <th className="py-2.5 px-4">Status</th>
+                      <th className="py-2.5 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-sm">
@@ -393,6 +428,31 @@ export function AcademicDepartmentModule({
                         </td>
                         <td className="py-2.5 px-4">
                           <StatusTag status={c.status} />
+                        </td>
+                        <td className="py-2.5 px-4 text-right space-x-1.5 whitespace-nowrap">
+                          {(isHR || isPrincipal || isSuperAdmin) && (
+                            <button
+                              onClick={() => handleToggleClassStatus(c)}
+                              className="px-2 py-0.5 text-xs border border-slate-200 rounded hover:bg-slate-50"
+                            >
+                              {c.status === 'active' ? 'Deactivate' : 'Activate'}
+                            </button>
+                          )}
+                          {isSuperAdmin &&
+                            (confirmDeleteClassId === c.id ? (
+                              <>
+                                <button onClick={() => handleDeleteClass(c)} className="px-2 py-0.5 text-xs bg-red-600 text-white rounded">Confirm</button>
+                                <button onClick={() => setConfirmDeleteClassId('')} className="px-2 py-0.5 text-xs border border-slate-200 rounded">No</button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDeleteClassId(c.id)}
+                                className="p-1 text-red-700 hover:bg-red-50 rounded"
+                                aria-label="Delete class"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            ))}
                         </td>
                       </tr>
                     ))}
