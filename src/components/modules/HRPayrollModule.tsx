@@ -1052,11 +1052,11 @@ export function HRPayrollModule() {
                   }
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
                 >
-                  <option value="teacher">Teacher (HR Blocked)</option>
-                  <option value="staff">Staff / Accountant / Clerk (HR Blocked)</option>
-                  <option value="department_supervisor">Department Supervisor (HR Blocked)</option>
-                  <option value="principal">Principal (Attendance Gate Only)</option>
-                  {isSuperAdmin && <option value="hr">HR Administrator</option>}
+                  <option value="employee">Employee</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="principal">Principal</option>
+                  <option value="hr">HR</option>
+                  <option value="super_admin">Super Admin</option>
                 </select>
               </div>
               <div>

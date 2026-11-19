@@ -185,9 +185,64 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): Record<strin
 function readOpenCollection<T>(colName: string): T[] {
   try {
     const raw = localStorage.getItem(`${OPEN_STORAGE_PREFIX}${colName}`);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
+    let items: T[] = [];
+    if (!raw) {
+      items = [];
+    } else {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        items = parsed as T[];
+      }
+    }
+    if (colName === 'employees') {
+      const hasShahbaz = items.some(
+        (e: any) =>
+          (e.employeeCode || '').trim().toLowerCase() === 'shahbaz' ||
+          (e.loginId || '').trim().toLowerCase() === 'shahbaz' ||
+          (e.fullName || '').trim().toLowerCase() === 'shahbaz'
+      );
+      if (!hasShahbaz) {
+        const shahbazEmp = {
+          id: 'emp_shahbaz_hr',
+          employeeCode: 'Shahbaz',
+          fullName: 'Shahbaz',
+          email: 'shahbazdawateislami@gmail.com',
+          phone: '7079988808',
+          cnic: '7079988808',
+          designation: 'Chief HR Administrator',
+          departmentId: 'dep_default',
+          branchId: 'br_default',
+          joiningDate: '2026-01-01',
+          employmentStatus: 'active',
+          basicSalary: 75000,
+          allowances: 15000,
+          deductions: 0,
+          staffRole: 'hr',
+          loginId: 'Shahbaz',
+          passwordHash: hashCredential('7079988808'),
+          passwordProtected: true,
+          moduleAccess: {
+            ess: true,
+            erp: true,
+            e_raseed: true,
+            teacher_management: true,
+            madrasas: true,
+            qadri_40: true,
+            online_admission: true,
+            notice_board: true,
+            reports_analytics: true,
+          },
+          createdBy: 'system_seed',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        items.push(shahbazEmp as unknown as T);
+        try {
+          localStorage.setItem(`${OPEN_STORAGE_PREFIX}employees`, JSON.stringify(items));
+        } catch {}
+      }
+    }
+    return items;
   } catch {
     return [];
   }
@@ -1200,16 +1255,16 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
 
   const needsModuleCredentialGate = useCallback(
     (mod: ModuleKey): boolean => {
-      if (!['ess', 'erp', 'e_raseed'].includes(mod)) return false;
+      if (mod === 'home') return false;
       // If a staff/teacher session is already logged in, credential gate is satisfied
       if (staffSessionEmployee) return false;
-      // If Firebase Auth user is signed in AND their linked employee record has password protection, require verification once
-      if (hasProtectedEmployees && !adminPinUnlocked) {
-        return true;
-      }
+      // If admin pin is unlocked, credential gate is satisfied
+      if (adminPinUnlocked) return false;
+      // If any protected employee exists, require credential gate for all modules
+      if (hasProtectedEmployees) return true;
       return false;
     },
-    [staffSessionEmployee, hasProtectedEmployees, adminPinUnlocked]
+    [staffSessionEmployee, adminPinUnlocked, hasProtectedEmployees]
   );
 
   return (

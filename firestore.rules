@@ -246,7 +246,7 @@ service cloud.firestore {
              isOptStr(data, 'photoUrl', 500) &&
              (!('documents' in data) || (data.documents is list && data.documents.size() <= 25 && (data.documents.size() == 0 || data.documents[0] is string))) &&
              (!('achievements' in data) || (data.achievements is list && data.achievements.size() <= 50 && (data.achievements.size() == 0 || data.achievements[0] is string))) &&
-             (!('staffRole' in data) || data.staffRole in ['teacher', 'staff', 'principal', 'department_supervisor', 'hr']) &&
+             (!('staffRole' in data) || data.staffRole in ['teacher', 'staff', 'principal', 'department_supervisor', 'hr', 'employee', 'super_admin']) &&
              isOptStr(data, 'loginId', 60) &&
              isOptStr(data, 'passwordHash', 128) &&
              (!('passwordProtected' in data) || data.passwordProtected is bool) &&
@@ -622,7 +622,7 @@ service cloud.firestore {
       allow get: if isValidId(employeeId) && isInstitutionalStaff() && (isHR() || isPrincipal() || ('uid' in existing() && existing().uid == request.auth.uid));
       allow list: if isInstitutionalStaff() && (isHR() || isPrincipal() || ('uid' in resource.data && resource.data.uid == request.auth.uid));
       allow create: if isValidId(employeeId) && isHR() && isValidEmployee(incoming()) && validCreateTimestamps(incoming()) && incoming().createdBy == request.auth.uid && exists(/databases/$(database)/documents/branches/$(incoming().branchId)) && exists(/databases/$(database)/documents/departments/$(incoming().departmentId));
-      allow update: if isValidId(employeeId) && isValidEmployee(incoming()) && validUpdateTimestamp(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+      allow update: if isValidId(employeeId) && isValidEmployee(incoming()) && validUpdateTimestamp(incoming()) && (
         isHR() ||
         ('uid' in existing() && existing().uid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['photoUrl', 'phone', 'updatedAt']))
       );

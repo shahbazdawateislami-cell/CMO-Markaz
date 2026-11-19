@@ -186,7 +186,7 @@ export interface Employee {
   photoUrl?: string;
   documents?: string[];
   achievements?: string[];
-  staffRole?: 'teacher' | 'staff' | 'principal' | 'department_supervisor' | 'hr';
+  staffRole?: 'employee' | 'teacher' | 'principal' | 'hr' | 'super_admin' | 'staff' | 'department_supervisor';
   loginId?: string;
   passwordHash?: string;
   passwordProtected?: boolean;
