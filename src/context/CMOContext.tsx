@@ -60,6 +60,9 @@ import { makeSafeId } from '../utils/validation';
 // Toggle to true whenever the Sign-In lock screen should be re-enabled
 export const AUTH_LOCK_ENABLED = false;
 
+// Global Security Master Switch: false = security OFF (unlocked for editing/client demo), true = strict password protection & role lock
+export const SECURITY_LOCKED = false;
+
 const OPEN_STORAGE_PREFIX = 'markazi_cmo_open_v1_';
 const STAFF_SESSION_KEY = 'markazi_cmo_staff_session_v1';
 const ADMIN_UNLOCK_KEY = 'markazi_cmo_admin_unlock_v1';
@@ -449,11 +452,13 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
 
   // Admin unlock state: true if Firebase SuperAdmin/HR, or unlocked with Admin PIN, or Open Mode with no PIN & no active Staff Session
   const isAdminUnlocked =
-    Boolean(staffSessionEmployee)
-      ? false
-      : firebaseUser
-        ? isBootstrappedOwner || userProfile?.role === 'super_admin' || userProfile?.role === 'hr'
-        : !hasAdminPin || adminPinUnlocked;
+    !SECURITY_LOCKED
+      ? true
+      : Boolean(staffSessionEmployee)
+        ? false
+        : firebaseUser
+          ? isBootstrappedOwner || userProfile?.role === 'super_admin' || userProfile?.role === 'hr'
+          : !hasAdminPin || adminPinUnlocked;
 
   const hasProtectedEmployees = React.useMemo(
     () =>
@@ -470,51 +475,64 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
   const isStaffSessionActive = Boolean(staffSessionEmployee);
 
   // STRICT ROLE RESOLUTION: Staff/Teacher credential session ALWAYS overrides Open Mode privileges!
-  const effectiveRole = staffSessionEmployee
-    ? staffSessionEmployee.staffRole || 'teacher'
-    : firebaseUser
-      ? isBootstrappedOwner
-        ? 'super_admin'
-        : userProfile?.role || 'pending'
-      : isOpenMode
-        ? hasAdminPin && !adminPinUnlocked
-          ? 'teacher'
-          : 'super_admin'
-        : 'pending';
+  const effectiveRole = !SECURITY_LOCKED
+    ? (staffSessionEmployee?.staffRole || 'super_admin')
+    : staffSessionEmployee
+      ? staffSessionEmployee.staffRole || 'teacher'
+      : firebaseUser
+        ? isBootstrappedOwner
+          ? 'super_admin'
+          : userProfile?.role || 'pending'
+        : isOpenMode
+          ? hasAdminPin && !adminPinUnlocked
+            ? 'teacher'
+            : 'super_admin'
+          : 'pending';
 
   const isSuperAdmin =
-    !isStaffSessionActive &&
-    (firebaseUser
-      ? effectiveRole === 'super_admin' && (isBootstrappedOwner || userProfile?.status === 'active')
-      : isOpenMode && (!hasAdminPin || adminPinUnlocked));
+    !SECURITY_LOCKED
+      ? true
+      : !isStaffSessionActive &&
+        (firebaseUser
+          ? effectiveRole === 'super_admin' && (isBootstrappedOwner || userProfile?.status === 'active')
+          : isOpenMode && (!hasAdminPin || adminPinUnlocked));
 
   const isHR =
-    isSuperAdmin ||
-    (staffSessionEmployee
-      ? effectiveRole === 'hr'
-      : Boolean(firebaseUser && effectiveRole === 'hr' && userProfile?.status === 'active'));
+    !SECURITY_LOCKED
+      ? true
+      : isSuperAdmin ||
+        (staffSessionEmployee
+          ? effectiveRole === 'hr'
+          : Boolean(firebaseUser && effectiveRole === 'hr' && userProfile?.status === 'active'));
 
   const isPrincipal =
-    isSuperAdmin ||
-    (staffSessionEmployee
-      ? effectiveRole === 'principal'
-      : Boolean(firebaseUser && effectiveRole === 'principal' && userProfile?.status === 'active'));
+    !SECURITY_LOCKED
+      ? true
+      : isSuperAdmin ||
+        (staffSessionEmployee
+          ? effectiveRole === 'principal'
+          : Boolean(firebaseUser && effectiveRole === 'principal' && userProfile?.status === 'active'));
 
   const isTeacher =
-    staffSessionEmployee
-      ? effectiveRole === 'teacher'
-      : firebaseUser
-        ? effectiveRole === 'teacher' && userProfile?.status === 'active'
-        : isSuperAdmin || effectiveRole === 'teacher';
+    !SECURITY_LOCKED
+      ? true
+      : staffSessionEmployee
+        ? effectiveRole === 'teacher'
+        : firebaseUser
+          ? effectiveRole === 'teacher' && userProfile?.status === 'active'
+          : isSuperAdmin || effectiveRole === 'teacher';
 
   const isDeptSupervisor =
-    staffSessionEmployee
-      ? effectiveRole === 'department_supervisor'
-      : firebaseUser
-        ? effectiveRole === 'department_supervisor' && userProfile?.status === 'active'
-        : isSuperAdmin;
+    !SECURITY_LOCKED
+      ? true
+      : staffSessionEmployee
+        ? effectiveRole === 'department_supervisor'
+        : firebaseUser
+          ? effectiveRole === 'department_supervisor' && userProfile?.status === 'active'
+          : isSuperAdmin;
 
   const isActiveStaff =
+    !SECURITY_LOCKED ||
     isStaffSessionActive ||
     isOpenMode ||
     isSuperAdmin ||
@@ -1204,6 +1222,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
 
   const hasModuleAccess = useCallback(
     (mod: ModuleKey): boolean => {
+      if (!SECURITY_LOCKED) return true;
       if (mod === 'home') return true;
       // Strict HR & Admin governance guard: NEVER accessible to teachers, clerks, or locked terminals
       if (mod === 'super_admin_panel') return isSuperAdmin;
@@ -1255,6 +1274,7 @@ export function CMOProvider({ children }: { children: React.ReactNode }) {
 
   const needsModuleCredentialGate = useCallback(
     (mod: ModuleKey): boolean => {
+      if (!SECURITY_LOCKED) return false;
       if (mod === 'home') return false;
       // If a staff/teacher session is already logged in, credential gate is satisfied
       if (staffSessionEmployee) return false;
